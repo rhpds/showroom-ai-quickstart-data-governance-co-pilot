@@ -1,0 +1,389 @@
+= Module 3: Data Governance Copilot in action
+:source-highlighter: rouge
+:toc: macro
+:toclevels: 1
+
+You've learned the concepts and architecture -- now it's time to experience the Data Governance Copilot firsthand. TradeNexus needs to see how governance-aware conversational analytics works in practice with their e-commerce data.
+
+In this module, you'll interact with the copilot through natural language queries, observe how it automatically validates governance policies, and understand the business benefits of this approach.
+
+== Learning objectives
+By the end of this module, you'll be able to:
+
+* Use natural language to explore database schemas and query TradeNexus e-commerce data
+* Observe how the copilot validates governance policies before executing queries
+* Understand the specific use case this quickstart addresses (self-service analytics with built-in compliance)
+* Recognize the benefits of keeping data and AI processing on OpenShift (data sovereignty)
+* Explain how this approach leverages existing relational database investments
+
+== Exercise 1: Your first interaction with the copilot
+
+Let's start by exploring the TradeNexus database using natural language queries.
+
+=== Access the copilot interface
+
+The Data Governance Copilot web interface is pre-deployed in your environment.
+
+. Navigate to the copilot UI route.
++
+The URL will be provided in your lab environment. Look for the **Copilot UI** link in the lab interface.
+
+. You should see a clean chat interface similar to this:
++
+image::screenshot.png[Copilot Interface,align="center",link=self,window=blank,width=700]
+
+=== Explore the database structure
+
+Let's ask the copilot to describe the database.
+
+. In the chat input, type:
++
+[source,text]
+----
+Tell me about this database.
+----
+
+. Press Enter or click Send.
+
+. Observe the copilot's response.
++
+**What's happening behind the scenes**:
++
+* The copilot calls `list_schemas()` to see available schemas
+* Calls `list_objects(schema='public')` to enumerate tables
+* Calls `get_object_details()` for each table to understand structure
+* Synthesizes a natural language summary of the database
++
+**Expected response** (may vary based on model):
++
+[source,text]
+----
+This is a PostgreSQL database containing TradeNexus e-commerce data. It includes:
+
+- dim_customer: Customer dimension table with demographic information
+- dim_product: Product catalog and details
+- fact_sales: Transaction history and sales facts
+- Several other dimensional and fact tables
+
+The database follows a dimensional modeling pattern typical for analytics workloads.
+----
+
+=== List tables explicitly
+
+Now let's be more specific.
+
+. Ask:
++
+[source,text]
+----
+List the tables and views in the public schema.
+----
+
+. The copilot will call `list_objects(schema='public')` and return a structured list.
+
+. Notice how the response includes table names -- this is raw metadata directly from PostgreSQL.
+
+=== Inspect table structure
+
+Let's understand a specific table.
+
+. Query:
++
+[source,text]
+----
+List the details of the dim_customer table in the public schema.
+----
+
+. The copilot calls `get_object_details(schema='public', table='dim_customer')` and returns:
++
+* Column names and data types
+* Constraints (primary keys, foreign keys)
+* Indexes
+* Any governance metadata in table comments
+
+=== Run an analytics query
+
+Now let's query actual data.
+
+. Ask:
++
+[source,text]
+----
+Visualize the number of customers by state using the dim_customer table.
+----
+
+. **Watch the agentic loop in action**:
++
+* Copilot inspects `dim_customer` structure
+* Identifies the `customer_state` column
+* Generates SQL: `SELECT customer_state, COUNT(*) FROM public.dim_customer GROUP BY customer_state`
+* Executes the query via `execute_sql()`
+* Returns results in a readable format (may include visualization if supported)
+
+. You'll see results showing customer distribution across states.
+
+=== Verify your understanding
+
+**Question**: Why did the copilot inspect the table structure before querying?
+
+**Answer**: The agentic loop validates what's actually in the database rather than guessing. It:
+
+* Confirms the table exists
+* Verifies column names (is it `customer_state`, `state`, or `customer_location`?)
+* Checks for any constraints or governance annotations
+* Ensures the query will succeed before executing
+
+This is fundamentally different from a chatbot that would generate SQL immediately and potentially fail.
+
+== Exercise 2: Governance in action
+
+Now let's see how governance policies are enforced automatically.
+
+=== Inspect governance metadata
+
+The copilot can read governance annotations stored as PostgreSQL comments.
+
+. Query:
++
+[source,text]
+----
+Show me all the metadata associated with the tables and views in the public schema.
+----
+
+. The copilot will:
++
+* Call `get_object_details()` for each table
+* Extract comments that contain governance policies
+* Present metadata including:
+.. **Certifications**: Is this table "gold standard" or deprecated?
+.. **PII fields**: Which columns contain personally identifiable information?
+.. **Retention policies**: How long should data be kept?
+.. **Last validation date**: When was this table last reviewed?
+
+. **Example metadata you might see**:
++
+[source,text]
+----
+Table: dim_customer
+- Certification: gold
+- PII fields: customer_email, customer_phone
+- Last validated: 2024-03-01
+- Retention: 7 years
+
+Table: dim_customer_old
+- Status: deprecated
+- Replacement: dim_customer
+- Retention end: 2024-12-31
+----
+
+=== Understanding governance-aware behavior
+
+**How this solves TradeNexus's compliance challenge**:
+
+. **Automated policy discovery**: The copilot reads governance rules from database metadata -- no separate policy management system needed
+. **Pre-query validation**: Before executing any query, the copilot can check if the table is certified and safe to use
+. **PII awareness**: The copilot knows which fields contain PII and can warn users or filter them automatically
+. **Deprecated table avoidance**: The copilot can steer users away from deprecated tables toward current replacements
+
+**What makes this governance-aware instead of just query generation**:
+
+* Traditional chatbot: Generates SQL blindly, might query deprecated tables or PII fields without awareness
+* **Data Governance Copilot**: Reads metadata first, validates certifications, respects governance policies, then executes safely
+
+=== Test a governance scenario
+
+Let's simulate a governance check.
+
+. Ask a question that references a table:
++
+[source,text]
+----
+How many customers are in the database?
+----
+
+. Observe that the copilot:
++
+* Discovers the `dim_customer` table
+* Checks if there are multiple customer tables (like `dim_customer_old`)
+* Chooses the certified, current table
+* Executes the count query
+
+If your environment has deprecated tables marked with metadata, the copilot will avoid them automatically.
+
+== Exercise 3: Understanding the business benefits
+
+Now that you've used the copilot, let's connect the technical implementation to business value for TradeNexus.
+
+=== Benefit 1: Leveraging relational data investments
+
+TradeNexus has years of data in PostgreSQL -- customer history, transactions, product catalogs. Traditional AI solutions often require:
+
+* Exporting data to vector databases for embeddings
+* Duplicating data in data lakes
+* Moving data to cloud AI services
+* Re-architecting storage for AI workloads
+
+**The Data Governance Copilot leverages existing relational data**:
+
+* Queries PostgreSQL directly through MCP
+* No data duplication or export
+* Preserves existing access controls and governance
+* Works with your current schema, no restructuring needed
+
+**Business impact**:
+
+* **Lower costs**: No duplicate storage, no ETL pipelines to AI-specific databases
+* **Faster deployment**: Use existing databases immediately
+* **Simpler architecture**: Fewer moving parts, less complexity
+* **Preserved governance**: Database permissions and policies still apply
+
+=== Benefit 2: Data sovereignty with OpenShift AI
+
+Traditional AI services send your data to external cloud providers:
+
+[source,text]
+----
+Your data → External API (OpenAI, Anthropic, etc.) → Results return
+
+Risks:
+- Data leaves your infrastructure
+- Subject to third-party terms of service
+- Compliance challenges for regulated industries
+- No control over model updates or availability
+----
+
+**The Data Governance Copilot achieves data sovereignty**:
+
+[source,text]
+----
+User query → OpenShift AI (your cluster) → MCP server (your cluster) → PostgreSQL (your cluster)
+
+Everything runs in your controlled environment:
+- LLM inference happens on your GPUs
+- Data never leaves your cluster
+- You control model versions and updates
+- Full audit trail in your systems
+----
+
+**Business impact for TradeNexus**:
+
+* **Regulatory compliance**: Data stays within controlled boundaries for GDPR, HIPAA, PCI-DSS compliance
+* **No vendor lock-in**: You control the AI stack, not dependent on external API providers
+* **Predictable costs**: No per-token pricing, no surprise API bills
+* **Privacy assurance**: Sensitive customer data never sent to third parties
+* **Air-gapped capable**: Can run in disconnected or restricted networks
+
+=== Benefit 3: Self-service analytics without SQL expertise
+
+Before the copilot:
+
+[source,text]
+----
+Business analyst: "I need to know customer distribution by state"
+→ Submit ticket to data team
+→ Wait 2-3 days
+→ Data analyst writes SQL
+→ Results delivered
+→ Follow-up questions require repeating the process
+----
+
+**With the copilot**:
+
+[source,text]
+----
+Business analyst: Types "Show me customer distribution by state"
+→ Answer in 10 seconds
+→ Follow-up questions answered immediately
+→ No SQL knowledge required
+----
+
+**Business impact**:
+
+* **10x faster insights**: Seconds instead of days
+* **Reduced analyst workload**: Data team focuses on strategic work, not routine queries
+* **Democratized data access**: Non-technical users can explore data safely
+* **Faster decision-making**: Immediate answers enable rapid response to market changes
+
+=== Benefit 4: Built-in compliance and audit trails
+
+Traditional BI tools and SQL access require:
+
+* Manual review of queries for governance violations
+* Trust that users won't access PII or deprecated tables
+* Separate logging and audit systems
+* Compliance checks after the fact
+
+**The copilot provides compliance by design**:
+
+* Every query goes through governance validation
+* Automated checks for certifications and PII
+* Complete audit trail of tool calls and decisions
+* Policy violations prevented, not detected afterward
+
+**Business impact for TradeNexus's compliance audit**:
+
+* **Demonstrable controls**: Show auditors that the system enforces policies automatically
+* **Complete audit trail**: Every query logged with governance checks
+* **Reduced risk**: Policy violations prevented at execution time
+* **Compliance confidence**: Business users can query safely without manual oversight
+
+== Module summary
+
+You've completed the Data Governance Copilot hands-on module and experienced governance-aware analytics firsthand.
+
+**What you accomplished:**
+
+* Interacted with the copilot using natural language to explore TradeNexus data
+* Observed the agentic loop validating metadata before executing queries
+* Explored governance metadata stored in PostgreSQL comments
+* Understood how the copilot makes governance-aware decisions automatically
+* Recognized the business benefits of this architectural approach
+
+**Key takeaways for TradeNexus:**
+
+* Self-service analytics is possible without sacrificing governance -- the copilot validates policies automatically
+* Existing PostgreSQL investments are leveraged directly through MCP -- no data migration needed
+* Data sovereignty is achieved by running the complete AI stack on OpenShift AI -- nothing leaves your cluster
+* Compliance is built-in through metadata validation -- not bolted on afterward
+
+**What you can explain:**
+
+* How natural language queries are transformed into safe, governance-aware database operations
+* Why the agentic loop's metadata inspection prevents policy violations
+* The business value of leveraging relational data without duplication or export
+* How data sovereignty is achieved by keeping AI inference and orchestration on OpenShift
+* The compliance benefits of automated governance validation
+
+**Real-world applications:**
+
+* **Financial services**: Query customer accounts while respecting PII and retention policies automatically
+* **Healthcare**: Analyze patient data with HIPAA-compliant governance enforcement
+* **Retail and e-commerce**: Enable marketing teams to explore customer data without SQL skills or compliance risk
+* **Manufacturing**: Provide supply chain insights with governance for proprietary data
+
+**Next steps for TradeNexus:**
+
+. **Deploy in dev environment**: Install the quickstart using the Helm charts
+. **Upload governance policies**: Add metadata to your tables and columns
+. **Pilot with business users**: Test self-service analytics with a small team
+. **Measure impact**: Track query turnaround time (days → seconds) and analyst workload reduction
+. **Plan production rollout**: Configure RBAC, audit logging, and high availability
+
+**Final reflection**:
+
+The Data Governance Copilot demonstrates that AI-powered analytics can be both powerful and compliant. By combining agentic AI (the ability to validate before acting) with Model Context Protocol (standardized tool access) and OpenShift AI (data sovereignty), TradeNexus can enable self-service analytics while maintaining strict governance controls.
+
+This isn't just a chatbot that generates SQL -- it's an intelligent agent that understands governance policies, validates metadata, and makes safe decisions automatically. That's the difference between AI that creates risk and AI that reduces it.
+
+== Learning outcomes achieved
+
+Let's verify you've accomplished the workshop's learning objectives:
+
+□ **Agentic AI fundamentals**: You understand the agentic loop, Model Context Protocol, and how agentic AI differs from chatbots
+□ **Design decisions**: You can explain the tradeoffs in tool selection, orchestration approach, and model choice
+□ **Architecture knowledge**: You know the five components and how they enable governance-aware analytics
+□ **Orchestration evaluation**: You can compare custom (MCP direct) versus framework (Llama Stack) approaches
+□ **Use case understanding**: You recognize the specific problem (self-service with governance) the quickstart solves
+□ **Business benefits**: You can articulate data sovereignty and relational data leverage advantages
+
+**Congratulations!** You're ready to evaluate whether the Data Governance Copilot approach fits TradeNexus's governance-aware analytics requirements.

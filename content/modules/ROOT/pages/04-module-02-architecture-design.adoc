@@ -1,0 +1,438 @@
+= Module 2: Architecture and design decisions
+:source-highlighter: rouge
+:toc: macro
+:toclevels: 1
+
+Now that you understand agentic AI fundamentals, you need to evaluate the Data Governance Copilot's specific architecture. TradeNexus wants to understand not just how it works, but why it's designed this way and whether the architectural choices fit their requirements.
+
+In this module, you'll explore the complete architecture of the quickstart, understand how each component contributes to governance-aware analytics, and evaluate the critical decision between custom orchestration and framework-based approaches.
+
+== Learning objectives
+By the end of this module, you'll be able to:
+
+* Identify the five core components of the Data Governance Copilot architecture and explain the role of each
+* Understand how the orchestration layer implements the agentic loop using FastAPI
+* Explain how pg-airman-mcp bridges the AI model with PostgreSQL through Model Context Protocol
+* Compare custom orchestration (MCP direct mode) versus framework orchestration (Llama Stack mode)
+* Make informed decisions about which orchestration approach fits specific requirements
+
+== The complete architecture
+
+The Data Governance Copilot consists of five runtime components working together to enable governance-aware conversational analytics.
+
+image::architecture.png[Data Governance Copilot Architecture,align="center",link=self,window=blank,width=700]
+
+Let's explore each component and understand how they collaborate.
+
+=== Component 1: Web UI (Svelte)
+
+**Purpose**: Modern chat interface for natural language queries
+
+**Technology**: Svelte 5 with TypeScript and TailwindCSS
+
+**Responsibilities**:
+
+* Accept user queries through a conversational interface
+* Stream responses in real-time using Server-Sent Events (SSE)
+* Display tool execution progress ("Inspecting database schema...", "Validating governance policies...")
+* Show reasoning transparency when using models that support it (Nemotron mode)
+
+**Why this matters for TradeNexus**:
+
+Business users need a simple, chat-like interface -- not SQL editors. The streaming updates provide transparency into what the AI is doing, building trust that governance checks are happening.
+
+**Key technical details**:
+
+[source,javascript]
+----
+// The UI connects to the backend's streaming endpoint
+const response = await fetch('/query/stream', {
+  method: 'POST',
+  body: JSON.stringify({ query: userInput })
+});
+
+// Reads SSE events in real-time
+for await (const event of readSSE(response.body)) {
+  if (event.type === 'tool_call') {
+    showProgress(`Calling ${event.tool_name}...`);
+  } else if (event.type === 'final_response') {
+    displayAnswer(event.content);
+  }
+}
+----
+
+=== Component 2: Backend orchestrator (FastAPI)
+
+**Purpose**: Implements the agentic loop and manages tool execution
+
+**Technology**: Python 3.12 with FastAPI, supports two orchestration modes
+
+**Responsibilities**:
+
+* Receive user queries from the web UI
+* Implement the agentic loop: observe → decide → act → learn (repeat until complete)
+* Connect to the LLM inference service
+* Discover available MCP tools from pg-airman-mcp
+* Execute tool calls requested by the LLM
+* Stream progress updates back to the UI
+* Manage conversation history and context
+
+**Provider-based architecture**:
+
+The backend uses a provider pattern to support two orchestration modes:
+
+[source,text]
+----
+┌─────────────────────────────┐
+│   FastAPI Backend           │
+│                             │
+│   ┌─────────────────────┐   │
+│   │  Provider Interface │   │
+│   └──────────┬──────────┘   │
+│              │              │
+│      ┌───────┴────────┐     │
+│      │                │     │
+│   ┌──▼──────┐  ┌──────▼──┐  │
+│   │   MCP   │  │  Llama  │  │
+│   │  Direct │  │  Stack  │  │
+│   │ Provider│  │ Provider│  │
+│   └─────────┘  └─────────┘  │
+└─────────────────────────────┘
+----
+
+Both providers implement the same interface but differ in how they execute the agentic loop.
+
+=== Component 3: MCP server (pg-airman-mcp)
+
+**Purpose**: PostgreSQL introspection and query tools exposed via Model Context Protocol
+
+**Technology**: EnterpriseDB's open-source MCP server for PostgreSQL
+
+**Responsibilities**:
+
+* Expose database operations as MCP tools
+* Enforce access controls (read-only mode for analytics)
+* Apply query timeouts to prevent runaway queries
+* Provide metadata about tables, columns, constraints, indexes
+* Read custom governance annotations (PII flags, certifications, retention policies)
+* Execute SQL queries safely
+* Return structured results to the orchestrator
+
+**Available tools** (subset used by the copilot):
+
+[source,text]
+----
+list_schemas()
+  → Returns all database schemas
+
+list_objects(schema)
+  → Returns tables and views in a schema
+
+get_object_details(schema, table)
+  → Returns column names, types, constraints, indexes, comments
+
+execute_sql(query, limit)
+  → Runs SELECT query with result row limit
+
+get_table_metadata(schema, table)
+  → Returns governance annotations (custom feature)
+----
+
+**Why this component is critical for governance**:
+
+The `get_table_metadata()` tool reads custom PostgreSQL comments that contain governance policies:
+
+[source,sql]
+----
+COMMENT ON TABLE public.dim_customer IS
+  'certification=gold|pii_fields=customer_email,customer_phone|retention=7years';
+----
+
+The AI agent calls this tool to check if a table is certified and which fields contain PII before executing queries.
+
+=== Component 4: Inference server (OpenShift AI)
+
+**Purpose**: Serve the LLM model for natural language understanding and reasoning
+
+**Technology**: vLLM (v0.11.0) on OpenShift AI with GPU acceleration
+
+**Supported models**:
+
+* **Qwen3-14B**: OpenAI-compatible function calling, fast inference
+* **NVIDIA Nemotron Nano 9B**: Custom tool calling format, reasoning transparency
+
+**Responsibilities**:
+
+* Accept chat completion requests with available tools
+* Generate multi-step reasoning plans
+* Decide which tools to call and with what parameters
+* Synthesize final answers from tool results
+
+**Model requirements for agentic AI**:
+
+. **Function calling support**: Model must understand tool schemas and generate valid tool calls
+. **Multi-step reasoning**: Must break complex queries into steps
+. **Large context window**: Needs to fit tool schemas + conversation + results
+. **Fast inference**: Enables more iterations in the agentic loop
+
+**Example interaction**:
+
+[source,json]
+----
+Request to LLM:
+{
+  "messages": [{"role": "user", "content": "Show customer distribution by state"}],
+  "tools": [
+    {"name": "list_objects", "description": "List tables in schema", ...},
+    {"name": "get_object_details", "description": "Get table structure", ...},
+    {"name": "execute_sql", "description": "Run SQL query", ...}
+  ]
+}
+
+LLM Response (iteration 1):
+{
+  "tool_calls": [
+    {"function": "list_objects", "arguments": {"schema": "public"}}
+  ],
+  "reasoning": "I need to find which table contains customer data"
+}
+
+After tool execution, backend sends results back to LLM for next iteration...
+----
+
+=== Component 5: PostgreSQL database
+
+**Purpose**: Store e-commerce data with governance metadata
+
+**Technology**: PostgreSQL 15+ with sample TradeNexus schema
+
+**Pre-loaded data**:
+
+* **dim_customer**: Customer dimension with state/region data
+* **dim_product**: Product catalog
+* **fact_sales**: Transaction history
+* **Governance annotations**: Custom comments on tables and columns
+
+**Governance metadata example**:
+
+[source,sql]
+----
+-- Table-level metadata
+COMMENT ON TABLE public.dim_customer IS
+  'certification=gold|last_validated=2024-03-01|pii_fields=email,phone';
+
+-- Column-level metadata
+COMMENT ON COLUMN public.dim_customer.customer_email IS
+  'classification=PII|encryption=required';
+
+-- Deprecated table marking
+COMMENT ON TABLE public.dim_customer_old IS
+  'status=deprecated|replacement=dim_customer|retention_end=2024-12-31';
+----
+
+The AI agent reads these annotations through the MCP server to make governance-aware decisions.
+
+== Orchestration decision: custom vs framework
+
+The Data Governance Copilot supports two orchestration modes, each representing a different architectural philosophy.
+
+=== Option 1: MCP direct mode (custom orchestration)
+
+**How it works**:
+
+The backend directly implements the agentic loop in Python code:
+
+[source,python]
+----
+async def agentic_loop(user_query, mcp_tools, llm_client):
+    messages = [{"role": "user", "content": user_query}]
+    max_iterations = 10
+
+    for iteration in range(max_iterations):
+        # Ask LLM what to do next
+        response = await llm_client.chat(messages, tools=mcp_tools)
+
+        # If LLM wants to call tools, execute them
+        if response.tool_calls:
+            for tool_call in response.tool_calls:
+                result = await execute_mcp_tool(tool_call)
+                messages.append(tool_result_message(result))
+
+        # If LLM has final answer, return it
+        elif response.finish_reason == "stop":
+            return response.content
+
+        # Add LLM response to history and continue loop
+        messages.append(response.message)
+
+    return "Max iterations reached"
+----
+
+**Pros**:
+
+* **Full control**: You decide retry logic, error handling, timeout behavior
+* **Model flexibility**: Supports custom tool formats (Nemotron's `<TOOLCALL>` tags)
+* **No framework dependencies**: No risk of framework bugs or breaking changes
+* **Transparency**: You can log every step for debugging
+
+**Cons**:
+
+* **More code to write**: You implement the loop, error handling, edge cases
+* **Maintenance burden**: You own the orchestration logic
+* **Testing complexity**: More code paths to test
+
+**Best for**:
+
+* Organizations that need custom orchestration behavior
+* Use cases requiring non-standard tool formats
+* Teams with Python expertise who want full control
+
+=== Option 2: Llama Stack mode (framework orchestration)
+
+**How it works**:
+
+The backend delegates orchestration to the Llama Stack framework running on OpenShift AI:
+
+[source,python]
+----
+async def llama_stack_mode(user_query, session_id):
+    # Create agent session with MCP tools
+    agent_config = {
+        "model": "qwen3-14b",
+        "tools": mcp_tools,  # Llama Stack discovers these from MCP server
+        "max_iterations": 10
+    }
+
+    # Llama Stack handles the agentic loop internally
+    response = await llama_stack_client.create_turn(
+        agent_id=agent_config_id,
+        session_id=session_id,
+        content=user_query
+    )
+
+    # Get the final response
+    return response.content
+----
+
+The Llama Stack operator (managed by OpenShift AI) handles:
+
+* Tool discovery from MCP servers
+* Agentic loop execution
+* Error handling and retries
+* Session management and persistence
+
+**Pros**:
+
+* **Less code**: Framework handles the loop, you just configure it
+* **OpenShift AI integration**: Managed by the platform operator
+* **Standard patterns**: Llama Stack provides best practices
+* **Faster development**: Get agentic behavior without writing loop code
+
+**Cons**:
+
+* **Framework dependency**: Tied to Llama Stack versioning and updates
+* **Less control**: Limited customization of loop behavior
+* **Preview technology**: Llama Stack operator is preview status (0.3.5.1+rhai0)
+* **Model constraints**: Must use OpenAI-compatible function calling (Qwen3 works, custom formats don't)
+
+**Best for**:
+
+* Organizations using OpenShift AI's full stack
+* Teams that prefer managed orchestration
+* Use cases that fit standard agentic patterns
+
+=== Architectural comparison
+
+[cols="1,2,2",options="header"]
+|===
+|Aspect |MCP Direct Mode |Llama Stack Mode
+
+|**Orchestration code**
+|You write Python loop code
+|Llama Stack framework manages loop
+
+|**Model support**
+|Any model (Qwen3, Nemotron)
+|OpenAI-compatible models only (Qwen3)
+
+|**Tool formats**
+|Custom formats supported
+|Standard OpenAI function calling
+
+|**Error handling**
+|You implement custom logic
+|Framework provides defaults
+
+|**Deployment**
+|FastAPI backend only
+|Backend + LlamaStackDistribution CRD
+
+|**Control level**
+|Full control, custom behavior
+|Standard behavior, less customization
+
+|**Maintenance**
+|You maintain orchestration code
+|Framework updates may require migration
+
+|**OpenShift AI integration**
+|Uses inference server only
+|Full integration with platform operator
+
+|**Best for**
+|Custom requirements, flexibility
+|Standard use cases, managed approach
+|===
+
+=== Which should TradeNexus choose?
+
+**Evaluation criteria**:
+
+. **Governance requirements**: Does TradeNexus need custom validation logic?
+.. **MCP direct**: Better if custom pre-query validation logic is needed
+.. **Llama Stack**: Fine if standard agentic patterns suffice
+
+. **Team expertise**: What is the team comfortable maintaining?
+.. **MCP direct**: Requires Python expertise for orchestration code
+.. **Llama Stack**: Less code to write, but framework knowledge needed
+
+. **Model flexibility**: Do they need to switch models or use custom formats?
+.. **MCP direct**: Supports any model
+.. **Llama Stack**: OpenAI-compatible only
+
+. **Risk tolerance**: How stable does the solution need to be?
+.. **MCP direct**: You control updates and changes
+.. **Llama Stack**: Preview technology, subject to framework changes
+
+**Recommendation**: Start with **MCP direct mode** for governance use cases that may require custom validation logic. Evaluate **Llama Stack mode** once it reaches GA status for simpler maintenance.
+
+== Module summary
+
+You've completed the architecture and design decisions module and now understand how the Data Governance Copilot components work together.
+
+**What you learned:**
+
+* The five-component architecture: Web UI, Backend orchestrator, MCP server, Inference, PostgreSQL
+* How the backend implements the agentic loop using a provider pattern
+* How pg-airman-mcp exposes database operations and governance metadata as MCP tools
+* The difference between custom orchestration (MCP direct) and framework orchestration (Llama Stack)
+* Evaluation criteria for choosing between orchestration approaches
+
+**Key takeaways for TradeNexus:**
+
+* The architecture separates concerns cleanly -- UI, orchestration, tools, inference, data
+* pg-airman-mcp is the critical component that enables governance checks through metadata inspection
+* The provider pattern allows experimentation with different orchestration approaches
+* Custom orchestration provides flexibility for complex governance requirements
+* Framework orchestration simplifies development but with less control
+
+**What you can explain:**
+
+* The role of each architectural component in enabling governance-aware analytics
+* How the agentic loop is implemented in the backend orchestrator
+* Why pg-airman-mcp is essential for reading governance policies from PostgreSQL
+* The tradeoffs between MCP direct mode and Llama Stack mode
+
+**Next steps:**
+
+Module 3 will give you hands-on experience using the Data Governance Copilot, exploring real governance scenarios, and seeing the architecture in action with TradeNexus's e-commerce data.

@@ -1,94 +1,55 @@
-= What is Showroom?
-:navtitle: What is Showroom?
+= AI-Powered Database Analytics with Built-in Governance
 
-Showroom is a web-based lab instruction platform for the https://demo.redhat.com[Red Hat Demo Platform].
-It combines rendered AsciiDoc content with embedded terminals, consoles, and interactive tools -- giving workshop and demo participants everything they need in a single browser tab.
+Welcome to the AI-Powered Database Analytics with Built-in Governance workshop!
 
-== What Users See
+== What you'll learn
 
-When a participant opens their Showroom URL they get a split-pane interface:
+In this workshop, you will:
 
-* **Left pane** -- step-by-step lab instructions rendered from an https://antora.org[Antora] site you author in AsciiDoc.
-* **Right pane** -- one or more tabs such as:
-** A web terminal (SSH to a bastion, containerised CLI tools, or both).
-** The OpenShift web console embedded in an iframe.
-** A VS Code editor (Code Server).
-** A VNC desktop (noVNC).
-** Any external URL you choose.
+* Understand the basic definition and building blocks of an agentic AI application, including concepts like the agentic loop, Model Context Protocol (MCP), and how agentic AI differs from other forms of AI
+* Learn the design decisions that must be made when building an agentic AI application
+* Explore the architectural elements that comprise the Data Governance Copilot quickstart
+* Evaluate the choice between custom orchestration and third-party frameworks like Llama Stack
+* Understand the specific use case and functionality the Data Governance Copilot quickstart addresses
+* Discover the benefits of the Data Governance quickstart, including leveraging an enterprise's investment in relational data and achieving data sovereignty using OpenShift AI
 
-The UI layout, tab names, and tab URLs are all controlled by a simple `ui-config.yml` file that lives in your content repository.
+== Who this is for
 
-== How It Gets Deployed
+This workshop is designed for developers, architects, SREs, and technical/business decision makers who want to understand how to build AI-powered analytics with built-in governance controls.
 
-This Ansible collection -- `agnosticd.showroom` -- is the primary way Showroom instances are deployed on the Red Hat Demo Platform.
-Depending on the environment type, you use one of two roles:
+**Experience level**: Beginner to Intermediate
 
-[cols="1,3",options="header"]
-|===
-|Role |Use when...
+== Prerequisites
 
-|`ocp4_workload_showroom`
-|Your lab runs on an OpenShift 4 cluster.
-The role deploys Showroom as a pod using a Helm chart, complete with content rendering, terminals, and an OpenShift `Route`.
+Before starting this workshop, you should have:
 
-|`vm_workload_showroom`
-|Your lab runs on a VM (RHEL, Fedora, etc.).
-The role deploys Showroom with rootless Podman, Traefik for TLS, and systemd for lifecycle management.
-|===
+* Basic understanding of databases and SQL
+* Familiarity with AI/ML concepts (helpful but not required)
+* Basic knowledge of OpenShift (helpful but not required)
 
-Both roles follow the same basic flow:
+== Workshop environment
 
-. Clone your Antora content repository.
-. Inject runtime variables (credentials, hostnames, GUIDs) as AsciiDoc attributes.
-. Render the content to HTML.
-. Serve the content alongside the terminal and tab services you configured.
-. Publish the final URL back to the user.
+You will work with a pre-deployed Data Governance Copilot environment running on Red Hat OpenShift. The environment includes:
 
-== Key Concepts
+* OpenShift AI 3 with inference capabilities
+* EnterpriseDB's pg-airman-mcp server for database introspection
+* PostgreSQL 15+ with sample e-commerce data
+* A web-based copilot interface for conversational analytics
 
-Content repository::
-A Git repo containing your AsciiDoc lab instructions, structured as an Antora component.
-You typically fork https://github.com/rhpds/showroom_template_nookbag[showroom_template_nookbag] and add your own pages.
-See xref:content-repo.adoc[].
+You will have access to:
 
-AgnosticV catalog item::
-The YAML configuration in the https://github.com/rhpds/agnosticv[agnosticv] repository that ties your content repo to an environment on the Red Hat Demo Platform.
-See xref:agnosticv-config.adoc[].
+* OpenShift cluster: {openshift_console_url}
+* Username: {user}
+* Password: {password}
 
-User data::
-A set of key-value pairs (hostnames, passwords, URLs) written by infrastructure roles during provisioning and automatically injected into your content as Antora attributes.
-See xref:user-data.adoc[].
+NOTE: All environment details and credentials are available in the lab interface.
 
-UI configuration::
-A `ui-config.yml` file in your content repo that defines the tabs, layout width, and dynamic URLs shown alongside your lab instructions.
-See xref:ui-config.adoc[].
+== Estimated time
 
-== Where to Start
+This workshop will take approximately **45 minutes** to complete.
 
-[cols="1,3",options="header"]
-|===
-|Goal |Page
+You can work at your own pace.
 
-|Get a Showroom lab running quickly
-|xref:quick-start.adoc[]
+== Let's get started!
 
-|Create or structure a content repo
-|xref:content-repo.adoc[]
-
-|Wire up an AgnosticV catalog item
-|xref:agnosticv-config.adoc[]
-
-|Understand the full architecture
-|xref:architecture.adoc[]
-
-|Contribute to Showroom itself
-|xref:contributing.adoc[]
-|===
-
-== Related Projects
-
-* https://github.com/agnosticd/showroom[agnosticd.showroom collection] -- this Ansible collection (you are here).
-* https://github.com/rhpds/showroom_template_nookbag[showroom_template_nookbag] -- the recommended content repo template.
-* https://github.com/rhpds/showroom-deployer[showroom-deployer] -- Helm charts that power OCP deployments.
-* https://github.com/rhpds/showroom-images[showroom-images] -- container images (content server, terminals, Antora, etc.).
-* https://github.com/rhpds/nookbag[nookbag] -- the zero-touch UI bundle.
+Click on **Workshop Overview** in the navigation to begin your learning journey.

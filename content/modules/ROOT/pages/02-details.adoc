@@ -1,0 +1,100 @@
+= Workshop details
+:toc:
+:toc-placement: preamble
+:icons: font
+
+== Timing and schedule
+
+=== Full workshop (45 minutes)
+* **Module 1**: Agentic AI fundamentals (15 minutes)
+* **Module 2**: Architecture and design decisions (15 minutes)
+* **Module 3**: Data Governance Copilot in action (15 minutes)
+
+== Technical requirements
+
+=== Software versions
+* Red Hat OpenShift Container Platform 4.20 or later
+* Red Hat OpenShift AI 3.0 or later
+* PostgreSQL 15 or later
+* Web browser (Chrome, Firefox, Safari, Edge)
+
+=== Environment access
+Participants need access to:
+
+* OpenShift AI cluster (provided during workshop)
+* Data Governance Copilot web UI
+* OpenShift web console
+* Terminal/command line access via web terminal
+
+=== Network requirements
+* Internet connectivity for accessing the OpenShift cluster
+* Access to OpenShift routes and services
+* HTTPS access to the copilot web interface
+
+== Environment setup
+
+=== Pre-workshop checklist
+□ **OpenShift cluster access confirmed** - Test login credentials at {openshift_console_url}
+□ **Copilot UI accessible** - Verify you can load the web interface
+□ **Web terminal working** - Test command line access if needed
+□ **Sample data loaded** - PostgreSQL database has TradeNexus e-commerce schema
+
+=== Setup validation
+The workshop environment is pre-deployed. Participants should verify access:
+
+[source,bash]
+----
+# Access the OpenShift console
+echo "OpenShift Console: {openshift_console_url}"
+echo "Username: {user}"
+echo "Password: {password}"
+----
+
+== Workshop components
+
+=== Pre-deployed infrastructure
+The following components are already deployed and configured:
+
+* **OpenShift AI 3**: Inference platform with vLLM runtime
+* **LLM Model**: Qwen3-14B or Nemotron model for natural language processing
+* **pg-airman-mcp**: EnterpriseDB's Model Context Protocol server for PostgreSQL introspection
+* **PostgreSQL 15+**: Database with sample TradeNexus e-commerce data including:
+** Customer dimension table with state/region data
+** Product catalog
+** Transaction history
+** Governance metadata and annotations
+* **Copilot Backend**: FastAPI orchestration service (supports both MCP direct and Llama Stack modes)
+* **Copilot UI**: Svelte-based conversational interface
+
+=== Architecture overview
+The Data Governance Copilot consists of these layers:
+
+1. **User Interface**: Web-based chat for natural language queries
+2. **Orchestration Layer**: Backend that implements the agentic loop
+3. **MCP Server**: Database introspection and governance tools
+4. **Inference**: OpenShift AI serving the LLM model
+5. **Data Layer**: PostgreSQL with governance metadata
+
+== Follow-up resources
+
+=== Next steps for participants
+* **GitHub Repository**: link:https://github.com/rh-ai-quickstart/data-governance-co-pilot[Data Governance Copilot source code^]
+* **MCP Specification**: link:https://modelcontextprotocol.io[Model Context Protocol documentation^]
+* **OpenShift AI Documentation**: link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed[Red Hat OpenShift AI^]
+* **EnterpriseDB pg-airman-mcp**: link:https://github.com/EnterpriseDB/pg-airman-mcp[PostgreSQL MCP server^]
+
+=== Additional learning paths
+* **Intermediate**: Deploy the quickstart in your own environment using the Helm charts
+* **Advanced**: Extend the MCP server with custom governance tools, integrate additional data sources
+* **Production**: Implement role-based access controls, add audit logging, configure HA deployment
+
+== Authors and contributors
+
+**Primary Author**: Red Hat AI Quickstart Team
+
+**Workshop Version**: 1.0
+
+**Contact Information**:
+* Workshop feedback: rh-ai-quickstart GitHub Issues
+* Technical questions: Red Hat Demo Platform
+* Content updates: GitHub pull requests welcome

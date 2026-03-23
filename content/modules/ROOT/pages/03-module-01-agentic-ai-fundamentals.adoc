@@ -1,0 +1,290 @@
+= Module 1: Agentic AI fundamentals
+:source-highlighter: rouge
+:toc: macro
+:toclevels: 1
+
+TradeNexus needs more than a chatbot that generates SQL -- they need an AI that actively verifies governance policies, inspects metadata, and makes decisions about safe data access. You've been tasked with understanding whether agentic AI can deliver this level of intelligent, policy-aware data interaction.
+
+In this module, you'll learn what makes agentic AI fundamentally different from traditional chatbots and understand the building blocks that enable AI agents to take actions in the real world.
+
+== Learning objectives
+By the end of this module, you'll be able to:
+
+* Explain the agentic loop and how it differs from simple prompt-response AI interactions
+* Understand Model Context Protocol (MCP) as a standardized way for AI to interact with tools and data sources
+* Recognize when agentic AI is the right architectural choice versus traditional chatbots or API-based solutions
+* Identify the key design decisions that shape how agentic AI applications behave
+
+== Understanding agentic AI: beyond chatbots
+
+Traditional AI chatbots follow a simple pattern: you ask a question, the AI generates text, the conversation ends. For TradeNexus, this isn't enough -- they need AI that can inspect database metadata, validate governance policies, execute queries safely, and verify results.
+
+**Agentic AI** changes the fundamental interaction model. Instead of just generating text, agentic AI:
+
+* **Observes** its environment through tools and APIs
+* **Decides** what actions to take based on goals
+* **Acts** by calling functions and services
+* **Learns** from the results to refine its next steps
+
+This creates a loop -- the **agentic loop** -- where the AI iteratively works toward a goal rather than generating a single response.
+
+=== The agentic loop explained
+
+Think about how a human data analyst would handle the query "Show me customer distribution by state":
+
+. **Observe**: "I need to find which table has customer data"
+. **Decide**: "I'll check the database schema first"
+. **Act**: Execute `\dt` to list tables
+. **Learn**: "I see a `dim_customer` table, let me inspect its columns"
+. **Decide**: "I need to understand the table structure"
+. **Act**: Execute `\d dim_customer` to see columns
+. **Learn**: "There's a `customer_state` column, perfect"
+. **Decide**: "Now I can write the aggregation query"
+. **Act**: Execute `SELECT customer_state, COUNT(*) FROM dim_customer GROUP BY customer_state`
+. **Learn**: "Got the results, now I can answer"
+. **Respond**: Present the customer distribution
+
+An agentic AI follows the same multi-step reasoning process. This is fundamentally different from a chatbot that would try to generate SQL immediately without inspecting metadata first.
+
+=== How agentic AI differs from other AI approaches
+
+Let's compare three approaches to answering "Which customers are in New York?":
+
+**Traditional Chatbot (prompt-response)**:
+[source,text]
+----
+User: "Which customers are in New York?"
+LLM: "Try this SQL: SELECT * FROM customers WHERE state = 'NY'"
+Result: Query fails (table doesn't exist) or returns wrong results (column name is different)
+----
+
+**RAG (Retrieval-Augmented Generation)**:
+[source,text]
+----
+User: "Which customers are in New York?"
+System: Retrieves schema documentation from vector database
+LLM: "Based on the schema, try: SELECT * FROM dim_customer WHERE customer_state = 'NY'"
+Result: Better, but still static - doesn't verify if the query worked or check governance
+----
+
+**Agentic AI with MCP**:
+[source,text]
+----
+User: "Which customers are in New York?"
+
+[Agentic Loop Iteration 1]
+LLM: "I need to find the customer table and understand its structure"
+Action: Call list_objects() MCP tool
+Result: Tables include dim_customer, dim_product, fact_sales
+
+[Iteration 2]
+LLM: "Let me inspect dim_customer to see columns"
+Action: Call get_object_details(table='dim_customer')
+Result: Columns include customer_id, customer_name, customer_state, ...
+
+[Iteration 3]
+LLM: "Before querying, I should check if this table has PII restrictions"
+Action: Call get_table_metadata(table='dim_customer')
+Result: Metadata shows this table is certified and PII-safe
+
+[Iteration 4]
+LLM: "Now I can safely query"
+Action: Call execute_sql("SELECT customer_name FROM dim_customer WHERE customer_state = 'NY' LIMIT 10")
+Result: Returns 10 customers in New York
+
+LLM Response: "I found customers in New York. The dim_customer table contains 47 customers with customer_state = 'NY'..."
+----
+
+Notice how the agentic approach **validates before acting** -- exactly what TradeNexus needs for governance-aware analytics.
+
+== Model Context Protocol: standardized tooling for AI
+
+The agentic loop needs a way for the LLM to interact with the real world. Model Context Protocol (MCP) provides this standardized interface.
+
+=== What is MCP?
+
+MCP is an open protocol that defines how AI models communicate with external tools and data sources. Think of it as a universal adapter that lets any LLM call any tool, as long as both speak MCP.
+
+**Without MCP** (custom integration):
+[source,text]
+----
+Your AI app → Custom database wrapper → PostgreSQL
+Your AI app → Custom API client → External service
+Your AI app → Custom file handler → Local files
+
+Problem: Every tool needs custom integration code. Each new tool means more code to write and maintain.
+----
+
+**With MCP** (standardized protocol):
+[source,text]
+----
+Your AI app → MCP Client → MCP Server (pg-airman-mcp) → PostgreSQL
+Your AI app → MCP Client → MCP Server (file-server) → Local files
+Your AI app → MCP Client → MCP Server (api-server) → External service
+
+Benefit: One MCP client implementation works with any MCP server. Adding new tools is configuration, not code.
+----
+
+=== MCP in the Data Governance Copilot
+
+The Data Governance Copilot uses **pg-airman-mcp**, an MCP server built by EnterpriseDB specifically for PostgreSQL. It exposes database operations as MCP tools:
+
+* `list_schemas()` -- enumerate database schemas
+* `list_objects()` -- display tables, views, sequences
+* `get_object_details(table)` -- retrieve column info, constraints, indexes
+* `execute_sql(query)` -- run SQL queries safely
+* `explain_query(query)` -- generate execution plans
+* `analyze_db_health()` -- check database health metrics
+
+The LLM sees these as **functions it can call** during the agentic loop. The MCP protocol handles:
+
+* **Tool discovery**: LLM asks "what tools are available?" and gets the list
+* **Parameter validation**: Each tool defines required parameters and types
+* **Error handling**: Tools return structured results or error messages
+* **Streaming**: Results can stream for real-time progress updates
+
+=== Why MCP matters for governance
+
+MCP enables the governance-aware behavior TradeNexus needs:
+
+. **Metadata inspection first**: The LLM can call `get_object_details()` to read governance annotations before executing queries
+. **Policy validation**: Tools can check certifications and data classifications
+. **Safe execution**: The `execute_sql()` tool respects access controls and query timeouts
+. **Transparency**: Every tool call is logged, creating an audit trail
+
+Without MCP, you'd have to build custom functions for every operation and manually write the orchestration code. MCP standardizes this.
+
+== Design decisions for agentic AI applications
+
+Building an agentic AI application requires making several architectural choices. Let's explore the key decisions you'll face.
+
+=== Decision 1: Tool selection and scope
+
+**Question**: Which tools should your AI agent have access to?
+
+**Tradeoffs**:
+
+* **Too few tools**: Agent can't accomplish tasks → users get "I can't do that" responses
+* **Too many tools**: Agent gets confused about which tool to use → slower responses, higher costs, potential for misuse
+
+**For Data Governance Copilot**:
+
+* **Core tools**: Database introspection (list_schemas, get_object_details, execute_sql)
+* **Governance tools**: Metadata reading, policy validation
+* **Excluded**: Table modification, user management, database administration
+* **Rationale**: Read-only analytics with governance checks -- exactly what TradeNexus business users need
+
+**Best practice**: Start with minimal tools for the specific use case, then expand based on real user needs.
+
+=== Decision 2: Orchestration approach
+
+**Question**: Who controls the agentic loop -- custom code or a framework?
+
+**Option A: Custom orchestration** (what the copilot's "MCP direct" mode does):
+
+[source,text]
+----
+Pros:
+- Full control over loop behavior
+- Can customize retry logic, error handling, timeouts
+- Works with any model and tool format
+- No dependency on framework updates
+
+Cons:
+- You write and maintain the orchestration code
+- Need to handle edge cases yourself
+- More code to test and debug
+----
+
+**Option B: Framework orchestration** (what "Llama Stack" mode does):
+
+[source,text]
+----
+Pros:
+- Pre-built loop management
+- Standard patterns for common scenarios
+- Framework handles retries, errors, logging
+- Faster to get started
+
+Cons:
+- Less control over loop behavior
+- Framework bugs or changes affect you
+- May not support custom tool formats
+- Dependency on framework updates
+----
+
+**For Data Governance Copilot**:
+
+The quickstart supports **both modes** to demonstrate the tradeoffs:
+
+* **MCP direct mode**: Custom orchestration for full control (supports Nemotron's custom tool format)
+* **Llama Stack mode**: Framework orchestration for standardized approach (OpenShift AI integration)
+
+Module 2 will dive deeper into this architectural choice.
+
+=== Decision 3: Model selection
+
+**Question**: Which LLM should power your agent?
+
+**Criteria for agentic AI models**:
+
+. **Tool calling support**: Model must understand function calling
+. **Reasoning capability**: Needs to plan multi-step solutions
+. **Context window**: Must fit tools list + conversation history
+. **Latency**: Faster models enable more iterations in the agentic loop
+
+**For Data Governance Copilot**:
+
+* **Qwen3-14B**: Excellent function calling, OpenAI-compatible format, fast inference
+* **Nemotron Nano 9B**: Custom tool format with reasoning transparency
+
+Both models run on OpenShift AI inference servers with vLLM for efficient GPU utilization.
+
+=== Decision 4: Safety and guardrails
+
+**Question**: How do you prevent the agent from doing harmful things?
+
+**Approaches**:
+
+. **Tool-level restrictions**: MCP server enforces read-only access, query timeouts
+. **System prompts**: Instruct the LLM about governance policies
+. **Validation layers**: Backend validates tool call parameters before execution
+. **Audit logging**: Track every tool call for compliance
+
+**For Data Governance Copilot**:
+
+* pg-airman-mcp runs in **restricted mode** (read-only, query timeouts)
+* System prompt includes the governance policy document
+* Backend validates that governance checks happened before data queries
+* All tool calls are logged for audit trails
+
+This defense-in-depth approach ensures TradeNexus can trust the AI with their data.
+
+== Module summary
+
+You've completed the agentic AI fundamentals module and now understand the building blocks of intelligent, action-taking AI systems.
+
+**What you learned:**
+
+* The agentic loop transforms AI from text generation to iterative problem-solving through observe-decide-act-learn cycles
+* Model Context Protocol (MCP) provides a standardized way for AI to discover and use tools without custom integration code
+* Agentic AI differs fundamentally from chatbots (single response) and RAG (static retrieval) by actively exploring and validating before acting
+* Key design decisions include tool selection, orchestration approach, model choice, and safety guardrails
+
+**Key takeaways for TradeNexus:**
+
+* Agentic AI can validate governance policies before executing queries -- solving the compliance challenge
+* MCP enables the AI to inspect metadata, read certifications, and verify data classifications automatically
+* The iterative loop allows the AI to discover the right tables and columns instead of guessing
+* Multiple orchestration options exist (custom vs framework) with different tradeoffs
+
+**What you can explain:**
+
+* Why agentic AI is necessary for governance-aware analytics (static responses aren't enough)
+* How the agentic loop enables multi-step reasoning and validation
+* What role MCP plays in connecting AI models to real-world tools
+* The key architectural decisions when building agentic AI applications
+
+**Next steps:**
+
+Module 2 will explore the specific architecture of the Data Governance Copilot quickstart, including the orchestration layer, MCP server integration, and the tradeoffs between custom and framework-based approaches.
