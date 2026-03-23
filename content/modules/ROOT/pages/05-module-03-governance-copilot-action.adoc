@@ -24,9 +24,16 @@ Let's start by exploring the TradeNexus database using natural language queries.
 
 The Data Governance Copilot web interface is pre-deployed in your environment.
 
-. Navigate to the copilot UI route.
+. Open the Copilot UI in a new browser tab:
 +
-The URL will be provided in your lab environment. Look for the **Copilot UI** link in the lab interface.
+link:https://copilot-ui-user{guid}-data-gov.{openshift_cluster_ingress_domain}[Copilot UI^]
++
+Or navigate directly to:
++
+[source,text]
+----
+https://copilot-ui-user{guid}-data-gov.{openshift_cluster_ingress_domain}
+----
 
 . You should see a clean chat interface similar to this:
 +
