@@ -9,20 +9,18 @@ You're a data architect at TradeNexus, a fast-growing e-commerce company, and yo
 
 TradeNexus needs to enable governance-aware conversational analytics on their relational e-commerce data for regulatory requirements. Your manager has explained: "We need to give business users the ability to query our data naturally while ensuring we never expose PII or violate data retention policies -- this is critical for our upcoming compliance audit."
 
-**Your assignment**: Evaluate the Data Governance Copilot quickstart to determine if it can enable self-service analytics while maintaining strict data governance controls for TradeNexus.
+**Your assignment**: Evaluate the Data Governance Copilot quickstart to determine if it can enable self-service analytics while providing governance-aware guidance for TradeNexus.
 
-**The objective**: Demonstrate that AI-powered analytics can be both powerful and compliant, allowing business users to ask questions naturally while the system automatically enforces governance policies.
+**The objective**: Demonstrate that AI-powered analytics can be both powerful and compliant, allowing business users to ask questions naturally while the system guides them toward governance-compliant data choices.
 
 == Success criteria for your mission
 
 By the end of this workshop, you'll have practical skills to address TradeNexus's governance-aware analytics requirements:
 
-* Understand agentic AI fundamentals -- the agentic loop, Model Context Protocol (MCP), and how this differs from chatbot-style AI → **recognize when agentic AI is the right architectural choice**
-* Learn key design decisions when building agentic AI applications → **make informed architectural choices for your use cases**
-* Explore the Data Governance Copilot architecture -- backend orchestrator, MCP server, inference components → **understand how the pieces fit together**
-* Evaluate orchestration choices between custom implementation and Llama Stack → **choose the right approach for your requirements**
-* Experience hands-on governance-aware analytics with TradeNexus data → **see how natural language queries respect data policies**
-* Understand data sovereignty benefits of running AI on OpenShift → **keep sensitive data and AI processing within your controlled infrastructure**
+* **Module 1**: Understand the 40-year evolution of text-to-SQL and why LLM-based agentic AI succeeds where earlier approaches failed → **recognize when agentic AI is the right architectural choice**
+* **Module 2**: Run your first natural language queries and observe governance checks in action → **experience safe data discovery without SQL expertise**
+* **Module 3**: Execute complex multi-step analytics and understand orchestration mechanics → **see how the agentic loop handles sophisticated reasoning**
+* **Module 4**: Explore MCP protocol and security mechanisms that protect your database → **understand the security boundaries that enable self-service**
 
 **Technical outcome**: You'll have hands-on experience with agentic AI that directly applies to TradeNexus's need for compliant, self-service analytics.
 
@@ -58,9 +56,9 @@ You should have:
 * **SQL skill barrier**: Not all stakeholders can write SQL → limited access to insights for non-technical users
 * **Compliance risk**: Without automated governance checks → risk of accidentally exposing PII or querying deprecated datasets in reports
 
-**The opportunity**: Agentic AI with Model Context Protocol can provide natural language access to data while automatically enforcing governance rules, and you've been selected to evaluate its feasibility for TradeNexus's compliance requirements.
+**The opportunity**: Agentic AI with Model Context Protocol can provide natural language access to data while guiding users toward governance-compliant choices, and you've been selected to evaluate its feasibility for TradeNexus's compliance requirements.
 
-**Technical perspective**: "We need AI that doesn't just answer questions -- it needs to understand our data governance policies and actively prevent policy violations. Traditional chatbots just generate SQL; we need an agent that verifies certifications, checks for PII, and respects retention policies before executing anything."
+**Technical perspective**: "We need AI that doesn't just answer questions -- it needs to understand our data governance policies and help users follow them. Traditional chatbots just generate SQL; we need an agent that verifies certifications, checks for PII, and recommends appropriate data sources before executing anything. This is for cooperative users who want guidance, not adversarial scenarios."
 
 == Your vision of success
 
@@ -68,7 +66,7 @@ If the Data Governance Copilot proves effective for TradeNexus's use case, here'
 
 **Immediate improvements** (this quarter):
 * **Self-service analytics**: Business users ask questions in natural language → answers in seconds instead of days
-* **Automated governance**: The copilot checks policies before every query → eliminates manual governance verification and reduces compliance risk
+* **Governance-aware guidance**: The copilot checks metadata and recommends compliant data sources → helps users make policy-compliant choices and reduces accidental violations
 
 **Strategic benefits** (within 6 months):
 * **Faster decision-making**: Analysts get insights 10x faster → improved responsiveness to market changes
@@ -83,10 +81,13 @@ If the Data Governance Copilot proves effective for TradeNexus's use case, here'
 → Module 1 explains the agentic loop and Model Context Protocol -- the copilot actively inspects metadata, validates policies, and makes decisions about safe data access rather than just generating SQL
 
 **"What happens if the AI tries to access PII or deprecated tables?"**
-→ Module 3 demonstrates the governance checks in action -- the copilot reads your policy document and automatically blocks unsafe queries
+→ Module 2 demonstrates the governance checks in action -- the copilot reads metadata and automatically warns when queries involve sensitive data
 
-**"Do we need to choose between custom orchestration and Llama Stack?"**
-→ Module 2 covers the architectural tradeoffs -- when to build custom versus when to use frameworks
+**"How does the orchestration actually work?"**
+→ Module 3 covers the complete flow from user query through LLM to database and back, including how messages are constructed and tool calls are managed
+
+**"How do we prevent malicious SQL from damaging the database?"**
+→ Module 4 shows the MCP protocol and security mechanisms, including deep parse tree analysis that rejects dangerous operations
 
 **"Can we really keep all our data and AI processing on-premises?"**
 → The entire quickstart runs on OpenShift AI -- your data, the AI model, and the orchestration all stay within your controlled infrastructure for complete data sovereignty

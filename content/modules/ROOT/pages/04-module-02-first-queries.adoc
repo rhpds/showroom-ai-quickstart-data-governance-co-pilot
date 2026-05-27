@@ -1,0 +1,437 @@
+= Module 2: Your first governance-aware queries
+:source-highlighter: rouge
+:toc: macro
+:toclevels: 1
+
+Now that you understand the theory, it's time to experience agentic AI firsthand. You'll interact with the Data Governance Copilot using natural language and watch as it checks governance metadata and guides you toward compliant data sources while answering your questions about TradeNexus's e-commerce data.
+
+In this module, you'll progress from simple database exploration to governance-aware analytics, building confidence in how the copilot keeps you safe while enabling self-service data access.
+
+== Learning objectives
+
+By the end of this module, you'll be able to:
+
+* Access and use the Data Governance Copilot web interface
+* Explore database schemas using natural language queries
+* Inspect table structures and metadata without writing SQL
+* Run analytics queries and observe the agentic loop in action
+* Understand how governance metadata guides safe data discovery
+
+== Exercise 1: Access the copilot and explore the database
+
+Let's start by connecting to the copilot and asking it to describe what data is available.
+
+=== Access the copilot interface
+
+The Data Governance Copilot web interface is pre-deployed in your OpenShift environment.
+
+. Open the Copilot UI in a new browser tab:
++
+link:https://copilot-ui-user{guid}-data-gov.{openshift_cluster_ingress_domain}[Data Governance Copilot UI^]
++
+Alternatively, you can navigate to your OpenShift cluster console and find the route under *Networking* → *Routes* in the `user{guid}-data-gov` project.
+
+. You should see a clean chat interface similar to this:
+
+image::Figure 1.png[Copilot Interface showing governance compliance notes,align="center",link=self,window=blank,width=600]
+
+*Figure 1*: The copilot's main interface shows a conversational chat on the left and governance compliance notes on the right. When queries involve sensitive data, the copilot automatically highlights PII fields and certification status.
+
+The interface includes:
+
+* **Chat input** at the bottom for your natural language queries
+* **Conversation area** displaying your questions and the copilot's responses
+* **Toolbar buttons** at the top right for uploading governance policies and managing conversations
+
+=== Your first query: database overview
+
+Let's ask the copilot to describe what's in the database.
+
+. In the chat input field, type:
++
+[source,text]
+----
+Tell me about this database.
+----
+
+. Press Enter or click the Send button.
+
+. Observe what happens:
++
+TIP: Watch for status indicators showing tool calls like "Calling list_schemas()" and "Calling list_objects()". This is the agentic loop in action.
+
+**What's happening behind the scenes:**
+
+The copilot executes an agentic loop:
+
+. **Iteration 1**: LLM decides to call `list_schemas()` to discover available schemas
+. **Iteration 2**: Calls `list_objects(schema='public')` to enumerate tables in the main schema
+. **Iteration 3**: May call `get_object_details()` for key tables to understand their structure
+. **Final response**: Synthesizes findings into a natural language summary
+
+**Expected response** (your model may vary slightly):
+
+[source,text]
+----
+This is a PostgreSQL database containing TradeNexus e-commerce data. The database
+includes:
+
+• dim_customer: Core customer table (contains PII - restricted use)
+• fact_orders: Order transaction history
+• fact_order_payments: Payment details for orders
+• v_rpt_customer_ltv_certified: [CERTIFIED] Gold-standard customer LTV view (PII-scrubbed)
+• v_cust_ltv_agg_deprecated: [DEPRECATED] Old LTV calculation
+• customer_master_deprecated: [DEPRECATED] Legacy customer table
+• sales_rpt_v2: Sales report view (data before 2018)
+
+The database includes certified views for safe analytics and deprecated objects
+that should not be used for new reporting.
+----
+
+=== Verify: You successfully queried the database
+
+✓ You saw the copilot's response describing the TradeNexus database
+✓ You observed tool call indicators showing the agentic loop iterations
+✓ The response was in natural language, not raw table listings
+
+== Exercise 2: Schema discovery and table inspection
+
+Now let's dig deeper into specific tables and their structure.
+
+=== List all tables explicitly
+
+. Ask the copilot:
++
+[source,text]
+----
+List all tables and views in the public schema.
+----
+
+. The copilot will call `list_objects(schema='public')` and return a structured list.
+
+**Expected response**:
+
+[source,text]
+----
+The public schema contains the following tables and views:
+
+Tables:
+• dim_customer (⚠️ contains PII - restricted use)
+• customer_master_deprecated (⚠️ deprecated)
+• fact_orders
+• fact_order_payments
+
+Views:
+• v_rpt_customer_ltv_certified (✓ CERTIFIED for BI reporting)
+• v_cust_ltv_agg_deprecated (⚠️ deprecated - do not use)
+• sales_rpt_v2
+----
+
+=== Inspect customer data sources
+
+Let's discover what customer data sources are available and which are approved for use.
+
+. Query:
++
+[source,text]
+----
+Show me the customer data sources and which ones are safe to use for reporting.
+----
+
+. The copilot will discover multiple sources and check their governance metadata.
+
+**Expected response**:
+
+[source,text]
+----
+I found several customer data sources with different governance levels:
+
+1. dim_customer (table)
+   • Columns: customer_id, customer_unique_id, customer_city, customer_state
+   • Primary Key: customer_id
+   • ⚠️ GOVERNANCE WARNING: "Core customer table. CONTAINS PII (PCI, address).
+     DO NOT USE FOR general BI. Only for auth_service."
+
+2. v_rpt_customer_ltv_certified (view) ✓ RECOMMENDED
+   • Columns: customer_unique_id, customer_city, customer_state,
+     total_revenue_ltv, total_orders, average_order_value,
+     first_purchase_date, last_purchase_date
+   • ✓ [CERTIFIED] Gold-standard, PII-scrubbed view for all customer LTV
+     reporting. Aggregated daily. Maintained by: Finance BI Team
+
+3. v_cust_ltv_agg_deprecated (view)
+   • ⚠️ [DEPRECATED] Old LTV calculation. Only includes data before 2018.
+     DEPRECATED as of Q3 2024. Do not use for new reporting.
+     Use v_rpt_customer_ltv_certified instead.
+
+RECOMMENDATION: Use v_rpt_customer_ltv_certified for customer analytics.
+It's PII-scrubbed, certified for BI, and maintained by the Finance team.
+----
+
+NOTE: The copilot automatically checked governance metadata and recommended the certified view instead of the PII-restricted table. This demonstrates how the system guides cooperative users toward compliant data choices.
+
+=== Verify: Schema discovery without SQL
+
+✓ You retrieved a list of tables using natural language
+✓ You inspected table structure without writing `\d` commands or SQL
+✓ The copilot provided accurate column names, types, and constraints
+
+== Exercise 3: Your first analytics query
+
+Now let's query actual data -- and watch the copilot validate before executing.
+
+=== Run a simple aggregation
+
+. Ask:
++
+[source,text]
+----
+How many customers do we have in each state?
+----
+
+. **Watch the agentic loop carefully**:
++
+The copilot will:
++
+. Call `list_objects()` to discover customer data sources
+. Call `get_object_details('dim_customer')` → sees "CONTAINS PII, DO NOT USE FOR general BI"
+. Call `get_object_details('v_rpt_customer_ltv_certified')` → sees "[CERTIFIED] Gold-standard, PII-scrubbed"
+. Identify `customer_state` column in the certified view
+. Generate SQL: `SELECT customer_state, COUNT(*) FROM v_rpt_customer_ltv_certified GROUP BY customer_state ORDER BY COUNT(*) DESC`
+. Call `execute_sql()` with the generated query
+. Return results with governance note
+
+**Expected response**:
+
+[source,text]
+----
+Customer distribution by state (using certified, PII-scrubbed data):
+
+São Paulo (SP): 15,540 customers
+Rio de Janeiro (RJ): 6,882 customers
+Minas Gerais (MG): 5,773 customers
+Rio Grande do Sul (RS): 5,466 customers
+... (additional states)
+
+Total: 96,096 unique customers across all states.
+
+Note: Data sourced from v_rpt_customer_ltv_certified (certified for BI reporting,
+PII-scrubbed). The dim_customer table was avoided because it contains PII and
+is restricted to auth_service use only.
+----
+
+IMPORTANT: The copilot **checked governance metadata first**, discovered that dim_customer contains PII and is restricted, then recommended the certified, PII-scrubbed view instead. This is governance-aware guidance in action -- helping cooperative users make compliant choices.
+
+=== Understanding the validation behavior
+
+**Why the copilot didn't immediately generate SQL:**
+
+A traditional chatbot might have guessed:
+
+[source,sql]
+----
+-- Chatbot guess (might fail):
+SELECT state, COUNT(*) FROM customers GROUP BY state
+----
+
+Problems with this approach:
+
+* Table might be called `dim_customer`, not `customers`
+* Column might be `customer_state`, not `state`
+* Query fails if the guess is wrong
+
+**The governance-aware agentic approach:**
+
+. **Observe**: "I need to find customer data"
+. **Decide**: "I'll list all tables and views first"
+. **Act**: Call `list_objects()`
+. **Learn**: "I see dim_customer, v_rpt_customer_ltv_certified, and deprecated objects"
+. **Decide**: "I should check governance metadata before choosing"
+. **Act**: Call `get_object_details('dim_customer')`
+. **Learn**: "⚠️ CONTAINS PII, DO NOT USE FOR general BI"
+. **Decide**: "I can't use dim_customer. Let me check the certified view"
+. **Act**: Call `get_object_details('v_rpt_customer_ltv_certified')`
+. **Learn**: "✓ [CERTIFIED] Gold-standard, PII-scrubbed for BI reporting"
+. **Decide**: "Perfect! I'll use the certified view"
+. **Act**: Call `execute_sql()` with query against v_rpt_customer_ltv_certified
+. **Success**: Query runs safely using approved, PII-scrubbed data
+
+=== Verify: Analytics query succeeded
+
+✓ The copilot found the correct table and column names
+✓ SQL was generated accurately without errors
+✓ Results were presented in a readable format
+✓ You didn't write any SQL yourself
+
+== Exercise 4: Governance metadata inspection
+
+Now let's see how governance policies are embedded in the database and how the copilot reads them.
+
+=== Inspect governance metadata
+
+The copilot can read governance annotations stored as PostgreSQL comments on tables and columns.
+
+. Query:
++
+[source,text]
+----
+Show me all the governance metadata for customer data sources.
+----
+
+. The copilot will:
++
+* Call `list_objects()` to find customer-related tables and views
+* Call `get_object_details()` for each to retrieve table/view comments
+* Parse governance annotations embedded in comments
+* Present metadata in a structured format
+
+**Expected response**:
+
+[source,text]
+----
+Governance metadata for customer data sources:
+
+1. dim_customer (table) ⚠️ RESTRICTED
+   Comment: "Core customer table. CONTAINS PII (PCI, address).
+            DO NOT USE FOR general BI. Only for auth_service."
+
+   Restrictions:
+   • Contains PII (payment card info, addresses)
+   • NOT approved for general BI or reporting
+   • Limited to auth_service application use only
+
+2. v_rpt_customer_ltv_certified (view) ✓ CERTIFIED FOR BI
+   Comment: "[CERTIFIED] Gold-standard, PII-scrubbed view for all customer
+            LTV reporting. Aggregated daily. Maintained by: Finance BI Team"
+
+   Approval:
+   • CERTIFIED for all BI and reporting use
+   • PII-scrubbed (safe for general access)
+   • Gold standard for customer lifetime value analysis
+   • Maintained by Finance BI Team
+
+3. v_cust_ltv_agg_deprecated (view) ⚠️ DEPRECATED
+   Comment: "[DEPRECATED] Old LTV calculation. Only includes data before 2018.
+            DEPRECATED as of Q3 2024. Do not use for new reporting.
+            Use v_rpt_customer_ltv_certified instead."
+
+   Status:
+   • Deprecated as of Q3 2024
+   • Only includes data before 2018 (incomplete)
+   • Should NOT be used for new reports
+   • Use v_rpt_customer_ltv_certified instead
+
+4. customer_master_deprecated (table) ⚠️ DEPRECATED
+   No comment (deprecated by table name)
+
+RECOMMENDATION: Always use v_rpt_customer_ltv_certified for customer analysis.
+It's the only certified, PII-scrubbed data source approved for general BI use.
+----
+
+=== Understanding governance-aware behavior
+
+**How this solves TradeNexus's compliance challenge:**
+
+. **Automated policy discovery**: Governance rules are stored in database metadata (comments) -- no separate policy management system needed
+. **Pre-query validation**: Before executing queries, the copilot can check if the table is certified and safe to use
+. **PII awareness**: The copilot knows which fields contain PII and can warn users or filter them automatically
+. **Deprecated table avoidance**: The copilot can steer users away from deprecated tables toward current replacements
+
+**What makes this governance-aware instead of just query generation:**
+
+* **Traditional chatbot**: Generates SQL blindly, might query dim_customer (PII-restricted) or deprecated views without awareness
+* **Data Governance Copilot**: Reads metadata first, detects PII restrictions, finds certified alternatives, recommends compliant data sources, then executes using the certified view -- guiding cooperative users toward good governance practices
+
+=== Try a governance scenario
+
+Let's see governance in action with a query that tests the copilot's decision-making.
+
+. Ask:
++
+[source,text]
+----
+Show me customers from São Paulo with their total lifetime value.
+----
+
+. Observe the copilot's response:
++
+The copilot should:
++
+* Check if dim_customer can be used → NO (contains PII, restricted to auth_service)
+* Find v_rpt_customer_ltv_certified → YES (certified, PII-scrubbed)
+* Use the certified view instead
+* Provide results with a governance note
+
+**Expected response with governance note**:
+
+[source,text]
+----
+I found customer lifetime value data for São Paulo (SP):
+
+Total customers: 15,540
+Total lifetime value: $42,891,234.56
+Average order value: $121.45
+Date range: 2016-09-04 to 2018-10-17
+
+Sample customers (top 5 by LTV):
+customer_unique_id           | total_revenue_ltv | total_orders
+-----------------------------+-------------------+--------------
+8d50f5eadf50201ccdcedfb9e2ac8455 |      $13,664.08  |     14
+06b8999e2fba1a1fbc88172c00ba8bc7 |      $12,493.22  |     11
+544ff9cfc8de536f2fbd17c616a5fe3f |       $9,821.45  |      9
+... (additional customers)
+
+✓ Data source: v_rpt_customer_ltv_certified (CERTIFIED for BI reporting)
+✓ PII-scrubbed: customer identifiers are hashed (no names, emails, or addresses)
+✓ Governance note: dim_customer table was NOT used (contains PII, restricted access)
+----
+
+NOTE: The copilot **recommended and used** the certified, PII-scrubbed view instead of the PII-restricted dim_customer table. This demonstrates governance-aware guidance -- the system checks metadata and helps users make compliant choices **before** executing queries.
+
+=== Verify: Governance checks happened
+
+✓ You retrieved governance metadata showing PII restrictions and certifications
+✓ The copilot identified that dim_customer contains PII and is restricted
+✓ The copilot automatically chose v_rpt_customer_ltv_certified (certified, PII-scrubbed)
+✓ The system validated governance policies **before** executing the query
+
+== Module summary
+
+You've completed your first hands-on module and successfully used the Data Governance Copilot to explore TradeNexus data safely.
+
+**What you accomplished:**
+
+* Accessed the copilot web interface and explored the database using natural language
+* Discovered multiple data sources including PII-restricted tables, certified views, and deprecated objects
+* Watched the copilot detect PII restrictions on dim_customer and automatically choose the certified alternative
+* Ran analytics queries using v_rpt_customer_ltv_certified (PII-scrubbed, approved for BI)
+* Inspected governance metadata stored in PostgreSQL comments showing [CERTIFIED] vs [DEPRECATED] vs PII-RESTRICTED classifications
+* Saw how the copilot makes governance-aware decisions by reading metadata and choosing approved data sources
+
+**Key takeaways for TradeNexus:**
+
+* Self-service analytics is possible without SQL knowledge -- business users can explore data through conversation
+* The agentic loop checks metadata **before** querying -- helping cooperative users avoid errors and policy violations
+* Governance policies embedded in database comments are automatically discovered and used to guide data source selection
+* PII awareness is built-in -- the copilot recommends alternatives when queries would touch PII-restricted fields
+
+**Learning outcomes checkpoint:**
+
+By now, you should be able to:
+
+□ Navigate the Data Governance Copilot web interface
+□ Use natural language to discover database schema and table structures
+□ Understand why the copilot inspects metadata before executing queries
+□ Recognize governance warnings when queries involve PII or sensitive data
+□ Explain how governance metadata is stored (PostgreSQL comments) and read (MCP tools)
+
+**What you experienced:**
+
+* **Discovery without risk**: You explored unfamiliar tables without accidentally querying the wrong data
+* **Validation before execution**: The agentic loop confirmed table and column names before generating SQL
+* **Compliance by design**: Governance checks happened automatically, not as an afterthought
+* **Transparency**: You saw which tools were called during the agentic loop
+
+**Next steps:**
+
+Module 3 will take you deeper into advanced analytics and orchestration. You'll run complex multi-step queries, visualize data, and peek behind the curtain to understand how the orchestration layer constructs messages, manages the agentic loop, and handles tool call responses from different LLM models.

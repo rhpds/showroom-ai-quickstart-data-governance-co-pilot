@@ -1,0 +1,545 @@
+= Module 3: Advanced analytics and orchestration deep-dive
+:source-highlighter: rouge
+:toc: macro
+:toclevels: 1
+
+You've successfully run basic queries and seen governance warnings in action. Now it's time to push the copilot further with complex analytics and understand the orchestration mechanics that make the agentic loop work.
+
+In this module, you'll run multi-step queries that require sophisticated reasoning, visualize results, and peek behind the curtain to see how messages flow between the orchestrator, LLM, and MCP server.
+
+== Learning objectives
+
+By the end of this module, you'll be able to:
+
+* Run complex, multi-step analytics queries that demonstrate the power of the agentic loop
+* Understand how user queries flow through the architecture from UI to database and back
+* Explain how the orchestrator constructs messages and manages tool call responses
+* Compare how different LLM models (Qwen3 vs Nemotron) handle tool calling
+* Recognize when custom orchestration provides advantages over framework-based approaches
+
+== Exercise 1: Complex multi-step analytics
+
+Let's challenge the copilot with queries that require multiple database operations and reasoning steps.
+
+=== Comparative analytics across time periods
+
+. Ask the copilot:
++
+[source,text]
+----
+Compare total revenue between 2016 and 2017, and show which states had the highest growth.
+----
+
+. Watch the agentic loop carefully -- this query requires several steps:
++
+. **Discover certified data source**: Find v_rpt_customer_ltv_certified (avoid PII-restricted dim_customer)
+. **Understand structure**: Inspect columns including customer_state and purchase dates
+. **Date filtering strategy**: Extract year from first_purchase_date or last_purchase_date
+. **Multiple aggregations**: Compute totals per state per year
+. **Comparison logic**: Calculate growth percentages
+. **Result presentation**: Format findings in a readable way
+
+**Expected response**:
+
+[source,text]
+----
+Revenue Comparison: 2016 vs 2017
+
+Total Revenue (all states):
+• 2016: $2.1 million
+• 2017: $9.8 million
+• Growth: +367.4%
+
+Top Growing States:
+1. São Paulo (SP): +421.3% ($891K → $4.6M)
+2. Rio de Janeiro (RJ): +389.2% ($245K → $1.2M)
+3. Minas Gerais (MG): +356.7% ($198K → $904K)
+
+Note: Analysis performed using v_rpt_customer_ltv_certified view
+(PII-scrubbed, certified for BI reporting).
+----
+
+**Why this demonstrates the agentic loop:**
+
+A traditional chatbot would struggle to:
+
+* Find the correct tables among potentially dozens of options
+* Determine which columns contain year information
+* Figure out how to join fact and dimension tables
+* Handle date filtering correctly (fiscal vs calendar year)
+
+The agentic approach:
+
+. **Observes**: Discovers available tables and views
+. **Decides**: Identifies v_rpt_customer_ltv_certified as the certified data source (avoids PII-restricted dim_customer)
+. **Acts**: Inspects the view structure to find revenue and date columns
+. **Learns**: Understands date fields and state grouping possibilities
+. **Decides**: Plans aggregation strategy by year and state
+. **Acts**: Generates and executes SQL
+. **Learns**: Processes results
+. **Responds**: Formats the answer
+
+=== Governance-aware visualization request
+
+Now let's ask for a visualization while ensuring governance compliance.
+
+. Query:
++
+[source,text]
+----
+Visualize the top 5 states by customer count and highlight any governance notes about the data.
+----
+
+. The copilot should:
++
+* Discover v_rpt_customer_ltv_certified as the certified data source
+* Check governance metadata confirming it's PII-scrubbed and CERTIFIED
+* Query the certified view for state distribution
+* Present results with governance compliance notes
+
+**Expected response with governance awareness**:
+
+[source,text]
+----
+Top 5 States by Customer Count:
+
+1. São Paulo (SP): 15,540 customers
+2. Rio de Janeiro (RJ): 6,882 customers
+3. Minas Gerais (MG): 5,773 customers
+4. Rio Grande do Sul (RS): 5,466 customers
+5. Paraná (PR): 5,045 customers
+
+📊 [Bar chart visualization]
+
+✓ Governance Compliance:
+• Data source: v_rpt_customer_ltv_certified [CERTIFIED]
+• PII-scrubbed: No customer names, emails, or addresses (identifiers are hashed)
+• Approved for general BI reporting by Finance BI Team
+• dim_customer (PII-restricted) was NOT used - copilot recommended certified alternative
+• No deprecated views were queried
+----
+
+NOTE: Depending on your deployment and model configuration, visualizations may appear as text-based charts, ASCII art, or links to external charting if configured.
+
+=== Verify: Complex queries succeeded
+
+✓ The copilot handled multi-table joins and time-based comparisons
+✓ Growth calculations were performed accurately
+✓ Governance metadata was checked and reported alongside results
+✓ The agentic loop navigated complex schema relationships successfully
+
+== Exercise 2: Understanding the orchestration flow
+
+Now let's peek behind the curtain and understand how the copilot actually works -- from your query to the LLM to the database and back.
+
+=== The complete architecture
+
+image::Figure 4.png[Complete copilot architecture,align="center",link=self,window=blank,width=700]
+
+*Figure 4*: The Data Governance Copilot architecture shows five key components: Web UI (Svelte), Backend Orchestrator (FastAPI), MCP Server (pg-airman-mcp), Inference Server (vLLM on OpenShift AI), and PostgreSQL database.
+
+=== User query flow
+
+When you type a question and press Enter, here's what happens:
+
+image::Figure 5.png[User query flow diagram,align="center",link=self,window=blank,width=700]
+
+*Figure 5*: The query flow shows how your natural language question travels through each component. The orchestrator manages the agentic loop, repeatedly calling the LLM and executing tool calls until the query is fully answered.
+
+**Step-by-step flow:**
+
+. **User input** (you type in the UI):
++
+[source,text]
+----
+"How many customers are in New York?"
+----
+
+. **Web UI** sends HTTP POST to backend:
++
+[source,json]
+----
+POST /query/stream
+{
+  "query": "How many customers are in New York?",
+  "session_id": "abc123"
+}
+----
+
+. **Backend orchestrator** starts the agentic loop:
++
+* Retrieves available MCP tools from pg-airman-mcp
+* Constructs initial message with user query and tool schemas
+* Sends to LLM inference server
+
+. **LLM inference server** (vLLM on OpenShift AI):
++
+* Processes the query
+* Decides which tool(s) to call
+* Returns tool call requests (not final answer yet!)
+
+. **Backend executes tool calls**:
++
+* Calls pg-airman-mcp: `list_objects(schema='public')`
+* Receives table/view list including `dim_customer`, `v_rpt_customer_ltv_certified`, etc.
+* Adds tool results to message history
+
+. **Loop continues (governance check)**:
++
+* Backend sends updated messages back to LLM
+* LLM calls `get_object_details('dim_customer')`
+* Backend executes, returns: "CONTAINS PII, DO NOT USE FOR general BI"
+* LLM decides to check certified view instead
+* LLM calls `get_object_details('v_rpt_customer_ltv_certified')`
+* Backend executes, returns: "[CERTIFIED] Gold-standard, PII-scrubbed"
+* LLM calls `execute_sql("SELECT COUNT(*) FROM v_rpt_customer_ltv_certified WHERE customer_state = 'SP'")`
+* Backend executes query against PostgreSQL
+
+. **Final response**:
++
+* LLM synthesizes results: "I found 15,540 customers in São Paulo using the certified, PII-scrubbed v_rpt_customer_ltv_certified view."
+* Backend streams response back to UI
+* User sees the answer with governance compliance note
+
+=== Message construction and formatting
+
+Let's look at how the orchestrator constructs messages for the LLM.
+
+image::Figure 6.png[Message construction process,align="center",link=self,window=blank,width=650]
+
+*Figure 6*: The orchestrator builds a messages array in the OpenAI API format, including system prompts, user queries, tool schemas, tool call requests, and tool results. This conversation history grows with each agentic loop iteration.
+
+**Message format (OpenAI API standard)**:
+
+[source,json]
+----
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a data analyst assistant with access to a PostgreSQL database. Always inspect table metadata before querying..."
+    },
+    {
+      "role": "user",
+      "content": "How many customers are in New York?"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_001",
+          "function": {
+            "name": "list_objects",
+            "arguments": "{\"schema\": \"public\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_001",
+      "content": "{\"tables\": [\"dim_customer\", \"fact_orders\", \"fact_order_payments\"],\"views\": [\"v_rpt_customer_ltv_certified\", \"v_cust_ltv_agg_deprecated\", \"sales_rpt_v2\"]}"
+    }
+    ...
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "list_objects",
+        "description": "List tables and views in a schema",
+        "parameters": { ... }
+      }
+    }
+    ...
+  ]
+}
+----
+
+**Key insights:**
+
+* **Message history grows**: Each tool call and result is appended
+* **Tool schemas included**: LLM sees available tools and their parameters
+* **Conversation state preserved**: The LLM "remembers" what it learned in previous iterations
+
+== Exercise 3: Comparing LLM models
+
+The copilot supports multiple LLM models with different tool calling formats. Let's compare how Qwen3 and Nemotron handle the same query.
+
+=== Understanding model differences
+
+**Qwen3-14B**:
+
+* Uses standard OpenAI function calling format
+* Fast inference (important for agentic loops with many iterations)
+* Tool calls embedded in structured JSON
+
+**NVIDIA Nemotron Nano 9B**:
+
+* Uses custom `<TOOLCALL>` tag format
+* Supports reasoning transparency (shows internal thought process)
+* Requires custom parsing in the orchestrator
+
+=== Nemotron with reasoning transparency
+
+If your environment is configured with Nemotron and reasoning enabled, you can see the LLM's internal reasoning process.
+
+. Access the copilot settings (toolbar button)
+
+. Enable "Show reasoning" if available
+
+. Ask a question:
++
+[source,text]
+----
+List all tables in the public schema.
+----
+
+. Observe the response with reasoning:
+
+image::Figure 7.png[Jinja chat template showing reasoning flags,align="center",link=self,window=blank,width=600]
+
+*Figure 7*: The Jinja2 chat template for Nemotron includes special tokens (`<extra_27>`, `<extra_28>`) that enable reasoning mode, allowing the model to show its internal thought process.
+
+image::Figure 8.png[Nemotron raw response,align="center",link=self,window=blank,width=700]
+
+*Figure 8*: Nemotron's raw response for "List all tables in the public schema" shows `<thinking>` tags with internal reasoning, followed by `<TOOLCALL>` tags for tool invocation.
+
+**Nemotron response structure**:
+
+[source,xml]
+----
+<thinking>
+The user wants to list tables. I should use the list_objects tool
+to get tables in the public schema.
+</thinking>
+
+<TOOLCALL>
+{
+  "name": "list_objects",
+  "arguments": {
+    "schema": "public"
+  }
+}
+</TOOLCALL>
+----
+
+=== Qwen3 standard function calling
+
+Qwen3 uses the OpenAI-standard format:
+
+image::Figure 9.png[Qwen3 raw response,align="center",link=self,window=blank,width=700]
+
+*Figure 9*: Qwen3's response for the same query uses the standard OpenAI function calling JSON format without visible reasoning tokens.
+
+**Qwen3 response structure**:
+
+[source,json]
+----
+{
+  "tool_calls": [
+    {
+      "id": "call_xyz",
+      "type": "function",
+      "function": {
+        "name": "list_objects",
+        "arguments": "{\"schema\": \"public\"}"
+      }
+    }
+  ]
+}
+----
+
+=== Orchestration implications
+
+**Why the copilot uses a provider pattern:**
+
+The backend supports both models through a provider abstraction:
+
+[source,text]
+----
+┌─────────────────────────────┐
+│   FastAPI Backend           │
+│                             │
+│   ┌─────────────────────┐   │
+│   │  Provider Interface │   │
+│   └──────────┬──────────┘   │
+│              │              │
+│      ┌───────┴────────┐     │
+│      │                │     │
+│   ┌──▼──────┐  ┌──────▼──┐  │
+│   │   MCP   │  │  Llama  │  │
+│   │  Direct │  │  Stack  │  │
+│   │         │  │         │  │
+│   │ Qwen3   │  │ Qwen3   │  │
+│   │ Nemotron│  │  only   │  │
+│   └─────────┘  └─────────┘  │
+└─────────────────────────────┘
+----
+
+**MCP Direct Provider** (custom orchestration):
+
+* Supports both Qwen3 and Nemotron
+* Custom parsing for Nemotron's `<TOOLCALL>` tags
+* Full control over reasoning token handling
+* You write the agentic loop code
+
+**Llama Stack Provider** (framework orchestration):
+
+* OpenAI-compatible models only (Qwen3 works, Nemotron doesn't)
+* Framework handles the agentic loop
+* Less code to maintain
+* Managed by OpenShift AI operator
+
+=== Try different query complexity
+
+. Run a simple query:
++
+[source,text]
+----
+Count the customers.
+----
++
+Expected iterations: 2-3 (find table → count)
+
+. Run a complex query:
++
+[source,text]
+----
+For each product category, show total revenue in 2024 and compare to 2023, sorted by highest growth percentage.
+----
++
+Expected iterations: 6-8 (find tables → inspect schemas → check joins → validate dates → execute query → calculate growth)
+
+The number of iterations reflects the complexity of reasoning required.
+
+=== Verify: Understanding orchestration
+
+✓ You understand how queries flow through the five-component architecture
+✓ You see how message arrays grow with each agentic loop iteration
+✓ You recognize the difference between Qwen3 and Nemotron tool calling formats
+✓ You understand why the provider pattern enables model flexibility
+
+== The orchestration decision: custom vs framework
+
+TradeNexus needs to choose between two orchestration approaches. Let's evaluate them based on what you've learned.
+
+=== MCP Direct mode (custom orchestration)
+
+**What it gives you:**
+
+* Support for both Qwen3 (standard format) and Nemotron (custom format)
+* Full control over the agentic loop logic
+* Custom error handling and retry strategies
+* Ability to modify message construction
+* No dependency on framework updates
+
+**What it costs:**
+
+* You write and maintain the orchestration code
+* More testing required (loop edge cases)
+* Updates and improvements are your responsibility
+
+=== Llama Stack mode (framework orchestration)
+
+**What it gives you:**
+
+* Pre-built agentic loop managed by OpenShift AI
+* Standard patterns and best practices
+* Automatic updates from the framework
+* Less code to write and maintain
+
+**What it costs:**
+
+* Only supports OpenAI-compatible models (Qwen3, not Nemotron)
+* Less control over loop behavior
+* Framework bugs affect your application
+* Preview technology (operator version 0.3.5.1+rhai0)
+
+=== Evaluation criteria
+
+[cols="1,2,2",options="header"]
+|===
+|Factor |MCP Direct |Llama Stack
+
+|**Model flexibility**
+|Qwen3, Nemotron, custom formats
+|Qwen3 only (OpenAI-compatible)
+
+|**Control level**
+|Full control over loop behavior
+|Framework-managed, limited customization
+
+|**Code maintenance**
+|You maintain orchestration logic
+|Framework handles updates
+
+|**Reasoning transparency**
+|Supports Nemotron's `<thinking>` tags
+|Not supported (standard format only)
+
+|**Governance customization**
+|Custom pre-query validation logic possible
+|Standard agentic pattern only
+
+|**Production readiness**
+|Mature approach (you control stability)
+|Preview status, subject to operator changes
+
+|**OpenShift AI integration**
+|Uses inference server only
+|Full integration with platform operator
+|===
+
+=== Recommendation for TradeNexus
+
+**Start with MCP Direct mode** because:
+
+. Governance use cases may require custom validation logic beyond standard agentic patterns
+. Support for multiple model formats provides flexibility
+. Full control over orchestration ensures stable production deployments
+. You can always migrate to Llama Stack once it reaches GA
+
+**Consider Llama Stack when:**
+
+. The operator reaches general availability (GA)
+. You don't need custom model formats
+. Standard agentic patterns fit your requirements
+. You prefer managed orchestration over custom code
+
+== Module summary
+
+You've completed the advanced analytics and orchestration module and now understand how the copilot works at a deep level.
+
+**What you accomplished:**
+
+* Ran complex multi-step analytics queries requiring joins, aggregations, and time-based comparisons
+* Visualized data and received governance-aware compliance notes alongside results
+* Understood the complete query flow from UI through orchestrator to LLM to database
+* Examined how message arrays are constructed and grow during the agentic loop
+* Compared Qwen3 and Nemotron tool calling formats
+* Evaluated custom (MCP Direct) versus framework (Llama Stack) orchestration approaches
+
+**Key takeaways for TradeNexus:**
+
+* Complex analytics queries work because the agentic loop breaks them into steps the LLM can reason through
+* The orchestrator manages message construction, tool execution, and conversation state
+* Different LLM models require different tool calling formats -- the provider pattern abstracts this
+* Custom orchestration provides maximum flexibility at the cost of maintenance burden
+* Framework orchestration simplifies code but limits model choice and customization
+
+**Learning outcomes checkpoint:**
+
+By now, you should be able to:
+
+□ Run and understand complex, multi-step analytics queries
+□ Explain the complete query flow through all five architectural components
+□ Describe how the orchestrator constructs messages for the LLM
+□ Differentiate between Qwen3's standard format and Nemotron's custom format
+□ Evaluate the tradeoffs between custom and framework orchestration
+□ Understand why TradeNexus might choose MCP Direct mode
+
+**Next steps:**
+
+Module 4 will explore the Model Context Protocol (MCP) in detail and examine the security mechanisms that keep the copilot safe. You'll see how MCP tools are discovered, how the OpenAI API format describes tools to the LLM, and how pg-airman-mcp validates SQL to prevent malicious or accidental damage.

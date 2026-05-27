@@ -5,10 +5,11 @@
 
 == Timing and schedule
 
-=== Full workshop (45 minutes)
-* **Module 1**: Agentic AI fundamentals (15 minutes)
-* **Module 2**: Architecture and design decisions (15 minutes)
-* **Module 3**: Data Governance Copilot in action (15 minutes)
+=== Full workshop (60-75 minutes)
+* **Module 1**: Understanding agentic AI and the text-to-SQL challenge (15 minutes)
+* **Module 2**: Your first governance-aware queries (18 minutes)
+* **Module 3**: Advanced analytics and orchestration deep-dive (20 minutes)
+* **Module 4**: MCP protocol and security mechanisms (12 minutes)
 
 == Technical requirements
 
@@ -35,7 +36,7 @@ Participants need access to:
 
 === Pre-workshop checklist
 □ **OpenShift cluster access confirmed** - Test login credentials at {openshift_console_url}
-□ **Copilot UI accessible** - Verify you can load the web interface
+□ **Copilot UI accessible** - Verify you can load link:https://copilot-ui-user{guid}-data-gov.{openshift_cluster_ingress_domain}[Copilot UI^]
 □ **Web terminal working** - Test command line access if needed
 □ **Sample data loaded** - PostgreSQL database has TradeNexus e-commerce schema
 
@@ -48,6 +49,9 @@ The workshop environment is pre-deployed. Participants should verify access:
 echo "OpenShift Console: {openshift_console_url}"
 echo "Username: {user}"
 echo "Password: {password}"
+
+# Access the Copilot UI
+echo "Copilot UI: https://copilot-ui-user{guid}-data-gov.{openshift_cluster_ingress_domain}"
 ----
 
 == Workshop components
@@ -90,7 +94,7 @@ The Data Governance Copilot consists of these layers:
 
 == Authors and contributors
 
-**Primary Author**: Red Hat AI Quickstart Team
+**Primary Author**: Red Hat AI Quickstart Team + EnterpriseDB (EDB)
 
 **Workshop Version**: 1.0
 

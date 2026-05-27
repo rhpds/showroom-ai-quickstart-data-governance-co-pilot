@@ -5,6 +5,7 @@
 * xref:02-details.adoc[Workshop Details]
 
 .Hands-on Modules
-* xref:03-module-01-agentic-ai-fundamentals.adoc[Module 1: Agentic AI Fundamentals]
-* xref:04-module-02-architecture-design.adoc[Module 2: Architecture and Design Decisions]
-* xref:05-module-03-governance-copilot-action.adoc[Module 3: Data Governance Copilot in Action]
+* xref:03-module-01-understanding-agentic-ai.adoc[Module 1: Understanding Agentic AI]
+* xref:04-module-02-first-queries.adoc[Module 2: Your First Queries]
+* xref:05-module-03-advanced-analytics-orchestration.adoc[Module 3: Advanced Analytics]
+* xref:06-module-04-mcp-protocol-security.adoc[Module 4: MCP and Security]

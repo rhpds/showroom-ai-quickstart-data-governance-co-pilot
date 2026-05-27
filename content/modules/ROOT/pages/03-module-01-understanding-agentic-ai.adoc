@@ -1,0 +1,405 @@
+= Module 1: Understanding agentic AI and the text-to-SQL challenge
+:source-highlighter: rouge
+:toc: macro
+:toclevels: 1
+
+Imagine you're a sales analyst at TradeNexus, minutes before a critical meeting. You need customer lifetime value (LTV) data from your company's PostgreSQL data warehouse. You list the tables and see hundreds of cryptic names: `cust_pdata_b`, `sales_rpt_v2`, `v_cust_ltv_agg`, `customer_master_DEPRECATED`. You face two major problems:
+
+* **Discovery**: Which table is the correct, "certified" source for LTV?
+* **Compliance**: Some tables contain highly sensitive PII (Personally Identifiable Information). Querying the wrong table could mean incorrect analysis or a serious compliance violation.
+
+Waiting for IT could take days. With agentic AI and the Data Governance Copilot, you can get safe, governance-aware answers in minutes.
+
+In this module, you'll understand why agentic AI fundamentally changes the text-to-SQL landscape and how it solves the governance challenge that traditional approaches cannot.
+
+== Learning objectives
+
+By the end of this module, you'll be able to:
+
+* Explain the business challenge that drives the need for governance-aware conversational analytics
+* Understand the agentic loop and how it differs from simple prompt-response AI interactions
+* Recognize Model Context Protocol (MCP) as a standardized way for AI to interact with tools and data sources
+* Describe the 40-year evolution of text-to-SQL technology and why LLM-based agents succeed where earlier approaches failed
+* Identify when agentic AI is the right architectural choice versus traditional chatbots or RAG-based solutions
+
+== The business challenge: discovery meets compliance
+
+The text-to-SQL problem has existed for decades -- enabling non-technical users to query databases using natural language. But for enterprises like TradeNexus, the challenge goes beyond generating SQL. They need:
+
+**Safe data discovery**
+
+* Users must find the right tables among hundreds of objects
+* Deprecated tables should be avoided automatically
+* "Certified" data sources must be prioritized
+
+**Built-in compliance**
+
+* PII fields must be identified before queries run
+* Governance policies must be validated automatically
+* Audit trails must show that compliance checks happened
+
+**Self-service without risk**
+
+* Business users need answers in minutes, not days
+* They shouldn't need to know SQL or database schema details
+* The system must guide users to avoid policy violations, not just detect them afterward
+
+Traditional chatbots and SQL generators fail this test -- they generate queries without understanding governance context. You need an AI agent that validates before acting.
+
+== Understanding agentic AI: beyond chatbots
+
+Traditional AI chatbots follow a simple pattern: you ask a question, the AI generates text, the conversation ends. For TradeNexus, this isn't enough. They need AI that can inspect database metadata, validate governance policies, execute queries safely, and verify results.
+
+**Agentic AI** changes the fundamental interaction model. Instead of just generating text, agentic AI:
+
+* **Observes** its environment through tools and APIs
+* **Decides** what actions to take based on goals
+* **Acts** by calling functions and services
+* **Learns** from the results to refine its next steps
+
+This creates a loop -- the **agentic loop** -- where the AI iteratively works toward a goal rather than generating a single response.
+
+=== The agentic loop explained
+
+Think about how a human data analyst would handle the query "Show me customer lifetime value by state":
+
+. **Observe**: "I need to find which table or view has customer LTV data"
+. **Decide**: "I'll check the database schema first"
+. **Act**: Execute `\dv` to list views
+. **Learn**: "I see `v_rpt_customer_ltv_certified` and `v_cust_ltv_agg_deprecated`"
+. **Decide**: "I should check which one is approved for reporting"
+. **Act**: Check the comments on both views
+. **Learn**: "The certified view is gold-standard and PII-scrubbed, the other is deprecated"
+. **Decide**: "I'll use the certified view"
+. **Act**: Execute `SELECT customer_state, COUNT(*) FROM v_rpt_customer_ltv_certified GROUP BY customer_state`
+. **Learn**: "Got the results from the approved data source"
+. **Respond**: Present the customer distribution safely
+
+An agentic AI follows the same multi-step reasoning process. This is fundamentally different from a chatbot that would try to generate SQL immediately without inspecting metadata first.
+
+=== How agentic AI differs from other AI approaches
+
+Let's compare three approaches to answering "Which customers are in New York?":
+
+**Traditional chatbot (prompt-response)**:
+
+[source,text]
+----
+User: "Which customers are in New York?"
+LLM: "Try this SQL: SELECT * FROM customers WHERE state = 'NY'"
+Result: Query fails (table doesn't exist) or returns wrong results
+        (column name is different)
+----
+
+**RAG (Retrieval-Augmented Generation)**:
+
+[source,text]
+----
+User: "How many customers are in New York?"
+System: Retrieves schema documentation from vector database
+LLM: "Based on the schema, try:
+      SELECT COUNT(*) FROM dim_customer WHERE customer_state = 'NY'"
+Result: Better, but still static -- doesn't verify governance rules
+        (dim_customer contains PII and shouldn't be used for BI!)
+----
+
+**Agentic AI with MCP**:
+
+[source,text]
+----
+User: "How many customers are in New York?"
+
+[Agentic Loop Iteration 1]
+LLM: "I need to find customer data sources"
+Action: Call list_objects() MCP tool
+Result: Tables/views include dim_customer, v_rpt_customer_ltv_certified,
+        v_cust_ltv_agg_deprecated, customer_master_deprecated
+
+[Iteration 2]
+LLM: "Let me check metadata on dim_customer since it seems relevant"
+Action: Call get_object_details(table='dim_customer')
+Result: Comment: "Core customer table. CONTAINS PII (PCI, address).
+                  DO NOT USE FOR general BI. Only for auth_service."
+
+[Iteration 3]
+LLM: "dim_customer contains PII and is restricted. Let me check the certified view"
+Action: Call get_object_details(table='v_rpt_customer_ltv_certified')
+Result: Comment: "[CERTIFIED] Gold-standard, PII-scrubbed view for all
+                  customer LTV reporting. Aggregated daily."
+        Columns include customer_state, customer_city, total_revenue_ltv
+
+[Iteration 4]
+LLM: "Perfect! I'll use the certified, PII-scrubbed view"
+Action: Call execute_sql("SELECT COUNT(*) FROM v_rpt_customer_ltv_certified
+                          WHERE customer_state = 'NY'")
+Result: Returns count: 1,247 customers
+
+LLM Response: "I found 1,247 customers in New York using the certified
+               v_rpt_customer_ltv_certified view (PII-scrubbed, approved
+               for general BI reporting)."
+----
+
+Notice how the agentic approach **validates before acting** -- exactly what TradeNexus needs for governance-aware analytics.
+
+== Model Context Protocol: standardized tooling for AI
+
+The agentic loop needs a way for the LLM to interact with the real world. Model Context Protocol (MCP) provides this standardized interface.
+
+=== What is MCP?
+
+MCP is an open protocol that defines how AI models communicate with external tools and data sources. Think of it as a universal adapter that lets any LLM call any tool, as long as both speak MCP.
+
+**Without MCP** (custom integration):
+
+[source,text]
+----
+Your AI app → Custom database wrapper → PostgreSQL
+Your AI app → Custom API client → External service
+Your AI app → Custom file handler → Local files
+
+Problem: Every tool needs custom integration code. Each new tool means
+         more code to write and maintain.
+----
+
+**With MCP** (standardized protocol):
+
+[source,text]
+----
+Your AI app → MCP Client → MCP Server (pg-airman-mcp) → PostgreSQL
+Your AI app → MCP Client → MCP Server (file-server) → Local files
+Your AI app → MCP Client → MCP Server (api-server) → External service
+
+Benefit: One MCP client implementation works with any MCP server.
+         Adding new tools is configuration, not code.
+----
+
+=== MCP in the Data Governance Copilot
+
+The Data Governance Copilot uses **pg-airman-mcp**, an MCP server built by EnterpriseDB specifically for PostgreSQL. It exposes database operations as MCP tools:
+
+* `list_schemas()` -- enumerate database schemas
+* `list_objects()` -- display tables, views, sequences
+* `get_object_details(table)` -- retrieve column info, constraints, indexes
+* `execute_sql(query)` -- run SQL queries safely
+* `explain_query(query)` -- generate execution plans
+* `get_table_metadata(table)` -- read governance annotations
+
+The LLM sees these as **functions it can call** during the agentic loop. The MCP protocol handles:
+
+* **Tool discovery**: LLM asks "what tools are available?" and gets the list
+* **Parameter validation**: Each tool defines required parameters and types
+* **Error handling**: Tools return structured results or error messages
+* **Streaming**: Results can stream for real-time progress updates
+
+=== Why MCP matters for governance
+
+MCP enables the governance-aware behavior TradeNexus needs:
+
+. **Metadata inspection first**: The LLM can call `get_object_details()` to read governance annotations before executing queries
+. **Policy validation**: Tools can check certifications and data classifications
+. **Safe execution**: The `execute_sql()` tool respects access controls and query timeouts
+. **Transparency**: Every tool call is logged, creating an audit trail
+
+Without MCP, you'd have to build custom functions for every operation and manually write the orchestration code. MCP standardizes this.
+
+image::Figure 2.png[Data Governance Copilot System Overview,align="center",link=self,window=blank,width=650]
+
+*Figure 2*: The Data Governance Copilot architecture shows how MCP connects the LLM to PostgreSQL through pg-airman-mcp, enabling governance-aware database introspection.
+
+== The 40-year evolution of text-to-SQL
+
+Agentic AI solutions to text-to-SQL aren't new -- researchers have pursued this goal for over four decades. Understanding this history helps you appreciate why modern LLM-based approaches represent a genuine breakthrough.
+
+=== Early attempts: grammar and logic (1982-1996)
+
+The earliest systems used formal grammars to translate a small subset of English into database queries.
+
+**Chat-80 (1982)**: Mapped ~150 English words to Prolog statements using templates.
+
+* **Approach**: Template-based translation with hand-crafted rules
+* **Limitation**: Very limited vocabulary, schema-specific, brittle
+
+**CHILL (1996)**: Used inductive logic to learn parsers from positive/negative examples.
+
+* **Approach**: Corpus-driven learning
+* **Limitation**: Required expensive schema-specific training data, computationally intensive, poor generalization
+
+=== Neural network era: seq-2-seq and GNNs (2017-2019)
+
+The rise of deep learning brought neural translation approaches to text-to-SQL.
+
+**Seq2SQL (2017)**: Applied machine translation techniques (LSTMs) to map natural language to SQL.
+
+* **Approach**: Sequence-to-sequence neural networks
+* **Limitation**: Schema-specific training, limited SQL expressivity
+
+**Spider-schema-GNN (2019)**: Combined graph neural networks with schema encoding.
+
+* **Approach**: GNNs to model table relationships and foreign keys
+* **Limitation**: Still required schema-specific fine-tuning, brittle on novel schema
+
+=== Hybrid transformer era (2019-2022)
+
+Researchers combined pre-trained language models (like BERT) with LSTMs and GNNs.
+
+**SQLova, RAT-SQL**: Hybrid transformer-LSTM-GNN architectures.
+
+* **Approach**: Use transformers for better natural language understanding
+* **Achievement**: Improved schema linking (mapping English terms to table/column names)
+* **Limitation**: Still struggled with background knowledge and novel schema
+
+=== The LLM breakthrough (2022-present)
+
+Modern LLM-based agents fundamentally changed the game. Not just incremental improvement -- a paradigm shift.
+
+.Evolution of text-to-SQL approaches
+[cols="1,1,2,2,2",options="header"]
+|===
+|Era |Year |Example |Approach |Limitation
+
+|Grammar-based
+|1982
+|Chat-80
+|Template translation with formal grammar
+|Very limited vocabulary, schema-specific
+
+|Inductive logic
+|1996
+|CHILL
+|Learn parser from positive/negative samples
+|Expensive schema-specific training, brittle
+
+|Deep learning
+|2017-2019
+|Seq2SQL, Spider-GNN
+|Neural translation, graph networks
+|Schema-specific, limited SQL expressivity
+
+|Hybrid transformers
+|2019-2022
+|SQLova, RAT-SQL
+|Pre-trained models + GNNs
+|Still struggled with background knowledge
+
+|LLM agents
+|2022+
+|GPT-4, Qwen, Nemotron
+|Agentic loop with MCP tools
+|State-of-the-art, schema-independent
+|===
+
+== Why LLMs change the game
+
+Today's LLM-powered AI agents succeed where earlier approaches failed in four critical ways:
+
+=== 1. Improved schema linking
+
+**The challenge**: Mapping user terms to database objects.
+
+* User says: "How much did we make last year?"
+* System must understand: "make" → revenue → SUM(amt) column in cust_sales_2025 view
+
+Earlier approaches relied on string matching and limited knowledge graphs. LLMs leverage **world knowledge** from their training to understand synonyms, business terminology, and domain concepts.
+
+=== 2. Schema-independent results
+
+**Earlier systems**: Required expensive fine-tuning on each database schema.
+
+**LLM agents**: Work on novel schema without retraining using:
+
+* **Prompt engineering**: Include schema info in context
+* **MCP-assisted augmentation**: Dynamically discover schema at query time
+* **Few-shot learning**: Provide example queries in the prompt
+* **Chain-of-thought**: Ask LLM to reason step-by-step
+
+This transforms text-to-SQL from a research problem into a practical tool any organization can deploy on their databases immediately.
+
+=== 3. Background knowledge
+
+LLMs encode vast factual knowledge from their training. This enables queries that require information outside the database:
+
+[source,text]
+----
+Query: "List the capitals of the top 10 U.S. Southeast states by sales"
+
+The system must know:
+- Which states are in the Southeast (Georgia, Florida, North Carolina...)
+- What their capitals are (Atlanta, Tallahassee, Raleigh...)
+- This knowledge likely isn't in the sales database
+
+LLM provides this parametric knowledge automatically.
+----
+
+Earlier systems couldn't handle these queries without custom knowledge bases.
+
+=== 4. Simplicity and maintainability
+
+Paradoxically, LLM-based systems are **simpler** than earlier approaches:
+
+* **No custom parsers**: LLM handles natural language understanding
+* **No schema-specific training**: Works on any database immediately
+* **No complex rule systems**: LLM reasoning replaces hand-crafted logic
+* **Easy model upgrades**: Swap in newer, better LLMs without rewriting code
+
+image::Figure 3.png[Agentic AI is not an open act,align="center",link=self,window=blank,width=500]
+
+*Figure 3*: Like a magician working within boundaries, agentic AI operates with freedom but within defined guardrails. The LLM can call tools and reason multi-step solutions, while the orchestrator (the "stage manager") provides SQL security controls and guides the agent toward governance-compliant data choices.
+
+== When to choose agentic AI
+
+Agentic AI isn't right for every use case. Here's when it makes sense:
+
+**Choose agentic AI when you need:**
+
+* Multi-step reasoning (inspect schema → validate policies → execute query → analyze results)
+* Dynamic tool selection (LLM decides which database operations to call)
+* Governance validation before execution
+* Ability to handle novel schema without retraining
+* Transparency in decision-making (audit trail of tool calls)
+
+**Consider simpler approaches when:**
+
+* You have fixed, known queries (use parameterized SQL)
+* Real-time latency requirements are critical (agentic loop adds latency)
+* Queries are simple lookups (RAG or direct API may suffice)
+* You don't need multi-step validation
+
+For TradeNexus's governance-aware analytics, agentic AI is the right fit because:
+
+* Metadata must be inspected before every query
+* Governance policies require validation across multiple tools
+* Business users ask unpredictable questions requiring multi-step reasoning
+* Audit compliance demands transparency in decision-making
+
+== Module summary
+
+You've completed the first module and now understand why agentic AI represents a genuine breakthrough in text-to-SQL technology.
+
+**What you learned:**
+
+* The business challenge driving governance-aware analytics: safe discovery and built-in compliance
+* The agentic loop transforms AI from text generation to iterative problem-solving through observe-decide-act-learn cycles
+* Model Context Protocol (MCP) provides a standardized way for AI to discover and use tools without custom integration code
+* Text-to-SQL has evolved over 40 years from rigid grammars (1982) to flexible LLM agents (2022+)
+* LLMs succeed through improved schema linking, schema-independent operation, background knowledge, and simplicity
+
+**Key takeaways for TradeNexus:**
+
+* Agentic AI can validate governance policies before executing queries -- solving the compliance challenge that earlier approaches couldn't
+* MCP enables the AI to inspect metadata, read certifications, and verify data classifications automatically
+* The iterative agentic loop allows the AI to discover the right tables and columns instead of guessing
+* Modern LLM agents work on any database schema without expensive fine-tuning
+
+**Learning outcomes checkpoint:**
+
+By now, you should be able to:
+
+□ Explain why the discovery + compliance problem requires agentic AI, not just SQL generation
+□ Describe the agentic loop and how it differs from single-shot chatbot responses
+□ Understand what MCP does and why it matters for governance
+□ Recognize that text-to-SQL has a 40-year history and LLMs represent a paradigm shift
+□ Identify when agentic AI is the right architectural choice
+
+**Next steps:**
+
+Module 2 will give you hands-on experience with the Data Governance Copilot. You'll start with simple queries and progressively explore schema discovery, governance metadata inspection, and safe analytics on TradeNexus's e-commerce data.

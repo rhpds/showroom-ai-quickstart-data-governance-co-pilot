@@ -1,0 +1,653 @@
+= Module 4: MCP protocol and security mechanisms
+:source-highlighter: rouge
+:toc: macro
+:toclevels: 1
+
+You've seen the copilot in action and understand how orchestration works. Now it's time to explore the critical foundation that makes it all possible -- the Model Context Protocol (MCP) -- and the security mechanisms that keep your data safe.
+
+In this module, you'll understand how MCP tools are discovered, how they're described to the LLM, and how pg-airman-mcp validates SQL to prevent malicious or accidental damage.
+
+== Learning objectives
+
+By the end of this module, you'll be able to:
+
+* Understand the MCP initialization handshake and tool discovery process
+* Explain how tools are described to the LLM using the OpenAI API format
+* Recognize how pg-airman-mcp validates SQL using deep syntax analysis
+* Understand the security boundaries that protect your database
+* Test the security mechanisms by attempting forbidden operations
+
+== The Model Context Protocol (MCP)
+
+MCP is an open protocol created by Anthropic that standardizes how LLMs communicate with external tools and data sources. Think of it as a universal adapter that lets any LLM work with any tool, as long as both speak MCP.
+
+=== Why MCP matters for agentic AI
+
+**Without MCP**, every AI application needs custom code for each tool:
+
+[source,text]
+----
+Your app → Custom PostgreSQL client code
+Your app → Custom file system handler
+Your app → Custom API integration
+Your app → Custom search implementation
+
+Problem:
+- Every new tool requires new integration code
+- Different LLMs have different tool calling formats
+- No standard way to discover available tools
+- Brittle, hard to maintain
+----
+
+**With MCP**, you write one client that works with any MCP server:
+
+[source,text]
+----
+Your app (MCP Client) → MCP Server (pg-airman-mcp) → PostgreSQL
+Your app (MCP Client) → MCP Server (filesystem) → Local files
+Your app (MCP Client) → MCP Server (web-search) → Search APIs
+
+Benefits:
+- Add tools by configuration, not code
+- Standard protocol for tool discovery
+- Works with any LLM that supports function calling
+- Easy to test and maintain
+----
+
+=== The MCP specification
+
+MCP defines several key operations:
+
+* **initialize**: Handshake between client and server, exchange capabilities
+* **tools/list**: Discover available tools
+* **tools/call**: Execute a specific tool
+* **resources/list**: Discover available resources (data sources)
+* **resources/read**: Read resource content
+
+For the Data Governance Copilot, we primarily use `initialize`, `tools/list`, and `tools/call`.
+
+== Exercise 1: MCP tool discovery
+
+Let's examine how the copilot discovers what tools are available from pg-airman-mcp.
+
+=== Initialization handshake
+
+When the copilot backend starts, it establishes a connection with pg-airman-mcp:
+
+image::Figure 11a.png[MCP initialization request,align="center",link=self,window=blank,width=600]
+
+image::Figure 11b.png[MCP initialization response,align="center",link=self,window=blank,width=600]
+
+*Figure 11*: The MCP initialization procedure shows the handshake between client and server. The client sends its protocol version and capabilities; the server responds with its version and supported features.
+
+**Initialization message** (from copilot to pg-airman-mcp):
+
+[source,json]
+----
+{
+  "jsonrpc": "2.0",
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {
+      "tools": {}
+    },
+    "clientInfo": {
+      "name": "data-governance-copilot",
+      "version": "1.0.0"
+    }
+  },
+  "id": 1
+}
+----
+
+**Server response**:
+
+[source,json]
+----
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {
+      "tools": {},
+      "resources": {}
+    },
+    "serverInfo": {
+      "name": "pg-airman-mcp",
+      "version": "0.2.0"
+    }
+  },
+  "id": 1
+}
+----
+
+This handshake confirms both sides speak MCP and establishes what features are supported.
+
+=== Tool discovery
+
+After initialization, the copilot calls `tools/list` to discover available database tools:
+
+image::Figure 10a.png[MCP tools/list request,align="center",link=self,window=blank,width=600]
+
+image::Figure 10b.png[MCP tools/list response with schema,align="center",link=self,window=blank,width=600]
+
+*Figure 10*: The MCP `tools/list` method returns all available tools. The left side shows the request message; the right side shows a portion of the response including tool schemas with names, descriptions, and parameter specifications.
+
+**Tools/list request**:
+
+[source,json]
+----
+{
+  "jsonrpc": "2.0",
+  "method": "tools/list",
+  "params": {},
+  "id": 2
+}
+----
+
+**Tools/list response** (partial):
+
+[source,json]
+----
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "tools": [
+      {
+        "name": "list_schemas",
+        "description": "List all schemas in the database",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      },
+      {
+        "name": "list_objects",
+        "description": "List tables, views, and sequences in a schema",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "type": "string",
+              "description": "Schema name (default: public)"
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "get_object_details",
+        "description": "Get detailed information about a table or view",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "type": "string",
+              "description": "Schema name"
+            },
+            "table": {
+              "type": "string",
+              "description": "Table or view name"
+            }
+          },
+          "required": ["table"]
+        }
+      },
+      {
+        "name": "execute_sql",
+        "description": "Execute a read-only SQL query",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "SQL SELECT query"
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum rows to return (default: 100)"
+            }
+          },
+          "required": ["query"]
+        }
+      }
+      ...
+    ]
+  },
+  "id": 2
+}
+----
+
+**Key insights:**
+
+* Each tool has a `name`, `description`, and `inputSchema`
+* The `inputSchema` uses JSON Schema to define parameters
+* Some parameters are `required`, others are optional
+* This schema tells the LLM what tools exist and how to call them
+
+== Exercise 2: Converting MCP tools to OpenAI API format
+
+The copilot's orchestrator converts MCP tool schemas into OpenAI API function calling format that the LLM understands.
+
+=== Why conversion is needed
+
+* **MCP format**: Designed for tool discovery and execution
+* **OpenAI API format**: Designed for LLM function calling
+* **The orchestrator**: Translates between these two standards
+
+image::Figure 12.png[OpenAI API format for tool description,align="center",link=self,window=blank,width=650]
+
+*Figure 12*: The OpenAI API format for the `list_objects` tool shows how MCP schemas are converted into the function calling format that LLMs expect. The description is preserved, and parameter schemas are translated to OpenAI's expected structure.
+
+=== OpenAI API tool format
+
+When the orchestrator sends a message to the LLM, tools are described like this:
+
+[source,json]
+----
+{
+  "messages": [ ... ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "list_objects",
+        "description": "List tables, views, and sequences in a schema",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "type": "string",
+              "description": "Schema name (default: public)"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "execute_sql",
+        "description": "Execute a read-only SQL query",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "SQL SELECT query"
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum rows to return (default: 100)"
+            }
+          },
+          "required": ["query"]
+        }
+      }
+    }
+  ]
+}
+----
+
+**What the LLM sees:**
+
+* A list of functions it can call
+* Descriptions that guide when to use each function
+* Parameter schemas that define valid inputs
+* Required vs optional parameters
+
+The LLM uses this information to decide which tools to call and with what arguments.
+
+=== Tool call execution flow
+
+. **LLM requests a tool call**:
++
+[source,json]
+----
+{
+  "tool_calls": [
+    {
+      "id": "call_abc123",
+      "type": "function",
+      "function": {
+        "name": "list_objects",
+        "arguments": "{\"schema\": \"public\"}"
+      }
+    }
+  ]
+}
+----
+
+. **Orchestrator converts to MCP format**:
++
+[source,json]
+----
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "list_objects",
+    "arguments": {
+      "schema": "public"
+    }
+  },
+  "id": 3
+}
+----
+
+. **pg-airman-mcp executes the tool**:
++
+Queries PostgreSQL: `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`
+
+. **MCP server returns results**:
++
+[source,json]
+----
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"tables\": [\"dim_customer\", \"fact_orders\", \"fact_order_payments\"], \"views\": [\"v_rpt_customer_ltv_certified\", \"v_cust_ltv_agg_deprecated\", \"sales_rpt_v2\"]}"
+      }
+    ]
+  },
+  "id": 3
+}
+----
+
+. **Orchestrator converts back to OpenAI format**:
++
+[source,json]
+----
+{
+  "role": "tool",
+  "tool_call_id": "call_abc123",
+  "content": "{\"tables\": [\"dim_customer\", \"fact_orders\", \"fact_order_payments\"], \"views\": [\"v_rpt_customer_ltv_certified\", \"v_cust_ltv_agg_deprecated\", \"sales_rpt_v2\"]}"
+}
+----
+
+. **Message added to conversation history, loop continues**
+
+== Exercise 3: SQL security and validation
+
+The most critical security question: How does pg-airman-mcp prevent malicious or accidental SQL commands from damaging the database?
+
+=== Multi-layered security approach
+
+pg-airman-mcp employs defense-in-depth:
+
+. **Connection-level restrictions**: Read-only database user
+. **Tool-level restrictions**: Only `execute_sql` can run queries
+. **Syntax validation**: Deep parse tree analysis
+. **Query classification**: Allow SELECT, reject INSERT/UPDATE/DELETE/DROP
+. **Timeout enforcement**: Queries must complete within limits
+. **Result limiting**: Maximum row counts prevent resource exhaustion
+
+=== Deep syntax analysis
+
+pg-airman-mcp doesn't just look for keywords like "DROP" -- it parses SQL into an abstract syntax tree (AST) and validates structure.
+
+image::Figure 13.png[SQL parse tree validation,align="center",link=self,window=blank,width=700]
+
+*Figure 13*: pg-airman-mcp uses deep syntax analysis to validate SQL safety. The parse tree shows how the query structure is analyzed -- not just keyword matching. This catches attempts to hide dangerous commands in subqueries or CTEs.
+
+**Example: Detecting hidden DROP commands**
+
+A naive approach might just check:
+
+[source,python]
+----
+# INSECURE: Simple keyword matching
+if "DROP" in query.upper():
+    reject()
+----
+
+**Problem**: This can be bypassed:
+
+[source,sql]
+----
+SELECT * FROM (SELECT 1; DROP TABLE dim_customer) AS t;
+----
+
+The keyword check sees "SELECT" first and might allow it.
+
+**pg-airman-mcp's approach**: Parse the entire query:
+
+[source,python]
+----
+# SECURE: Parse tree analysis
+parse_tree = parse_sql(query)
+
+for statement in parse_tree:
+    if statement.type in [DROP, INSERT, UPDATE, DELETE, TRUNCATE]:
+        reject("Only SELECT queries allowed")
+----
+
+**Parse tree validation catches:**
+
+* Nested DROP commands in subqueries
+* CTEs (Common Table Expressions) with dangerous operations
+* UNION queries where one branch is malicious
+* Function calls that modify data (even in SELECT context)
+
+=== Try a forbidden operation
+
+Let's test the security mechanisms.
+
+. In the copilot, ask:
++
+[source,text]
+----
+Delete all customers from California.
+----
+
+. Observe what happens:
++
+The copilot should:
++
+* Generate SQL: `DELETE FROM dim_customer WHERE customer_state = 'CA'`
+* Call `execute_sql()` with this query
+* pg-airman-mcp **rejects** it during validation
+* Error returned: "Only SELECT queries are allowed"
+
+**Expected response**:
+
+[source,text]
+----
+⚠️ Error: I cannot execute that query.
+
+The pg-airman-mcp server only allows read-only SELECT queries for data analysis.
+DELETE, INSERT, UPDATE, and other data modification commands are prohibited
+for security and governance compliance.
+
+If you need to modify data, please use your organization's approved database
+management tools with proper authorization.
+----
+
+. Try another forbidden operation:
++
+[source,text]
+----
+Show me the customer table, and also drop the old customer backup table.
+----
+
+. The copilot might generate:
++
+[source,sql]
+----
+SELECT * FROM dim_customer LIMIT 10;
+DROP TABLE dim_customer_old;
+----
+
+. pg-airman-mcp detects the `DROP` statement and rejects the entire batch.
+
+=== Allowed operations
+
+The following queries are safe and will execute:
+
+[source,sql]
+----
+-- ✅ Simple SELECT
+SELECT * FROM dim_customer LIMIT 10;
+
+-- ✅ JOINs and aggregations
+SELECT c.customer_state, COUNT(*)
+FROM dim_customer c
+JOIN fact_orders o ON c.customer_id = o.customer_id
+GROUP BY c.customer_state;
+
+-- ✅ Subqueries (as long as all are SELECT)
+SELECT *
+FROM dim_customer
+WHERE customer_id IN (
+  SELECT customer_id FROM fact_orders WHERE order_purchase_timestamp > '2024-01-01'
+);
+
+-- ✅ CTEs (Common Table Expressions)
+WITH top_states AS (
+  SELECT customer_state, COUNT(*) as cnt
+  FROM dim_customer
+  GROUP BY customer_state
+  ORDER BY cnt DESC
+  LIMIT 5
+)
+SELECT * FROM top_states;
+----
+
+=== Verify: Security mechanisms work
+
+✓ You understand the multi-layered security approach
+✓ You recognize that parse tree analysis is more robust than keyword matching
+✓ You tested a forbidden operation and saw it rejected
+✓ You confirmed that only SELECT queries are allowed
+
+== Exercise 4: Understanding the security boundaries
+
+Let's map out exactly what the copilot can and cannot do.
+
+=== What the copilot CAN do (by design)
+
+**Read operations**:
+
+* ✅ List schemas, tables, views
+* ✅ Inspect table structures (columns, types, indexes)
+* ✅ Read table and column comments (governance metadata)
+* ✅ Execute SELECT queries with JOINs, subqueries, aggregations
+* ✅ Analyze query execution plans
+
+**Governance operations**:
+
+* ✅ Read governance metadata from comments
+* ✅ Warn users when queries involve PII fields
+* ✅ Suggest certified tables over deprecated ones
+* ✅ Provide audit trail of all tool calls
+
+=== What the copilot CANNOT do (security boundaries)
+
+**Write operations** (enforced by parse tree validation):
+
+* ❌ INSERT, UPDATE, DELETE records
+* ❌ CREATE, ALTER, DROP tables
+* ❌ GRANT or REVOKE permissions
+* ❌ CREATE or modify users
+* ❌ TRUNCATE tables
+
+**Administrative operations** (enforced by database permissions):
+
+* ❌ Modify database configuration
+* ❌ Create or modify indexes (even if allowed by parse tree, db user lacks permission)
+* ❌ Vacuum or analyze tables
+* ❌ Access system catalogs beyond read-only metadata
+
+**Resource exhaustion** (enforced by timeouts and limits):
+
+* ❌ Run queries that take longer than timeout (default: 30 seconds)
+* ❌ Return more rows than limit (default: 1000 rows)
+* ❌ Execute concurrent queries beyond connection pool limits
+
+=== Defense in depth
+
+Notice that security is enforced at **multiple layers**:
+
+. **Database user permissions**: The MCP server connects as a read-only user
+. **MCP server validation**: Parse tree analysis rejects dangerous SQL
+. **Query timeouts**: Long-running queries are killed
+. **Result limits**: Massive result sets are truncated
+. **Audit logging**: All queries are logged for compliance
+
+If one layer fails, others still protect the database.
+
+=== Why this matters for TradeNexus
+
+**Compliance requirement met**:
+
+* Business users can explore data safely without risk of accidental damage (SQL security prevents DELETE/DROP)
+* IT doesn't need to review every query manually
+* Governance metadata guides users toward certified, compliant data sources
+* Audit trail exists for compliance reporting
+
+**Risk reduction**:
+
+* No risk of `DROP TABLE` accidents
+* No risk of PII data being modified or deleted
+* No risk of resource exhaustion from runaway queries
+* Clear boundaries for self-service analytics
+
+== Module summary
+
+You've completed the final technical module and now understand how MCP and security mechanisms make the copilot safe for production use.
+
+**What you learned:**
+
+* MCP provides a standardized protocol for tool discovery and execution
+* The initialization handshake establishes capabilities between client and server
+* MCP tool schemas are converted to OpenAI API format for LLM consumption
+* pg-airman-mcp uses deep parse tree analysis to validate SQL safety
+* Multiple security layers (permissions, validation, timeouts, limits) protect the database
+* Only read-only SELECT queries are allowed -- all write operations are rejected
+
+**Key takeaways for TradeNexus:**
+
+* MCP standardization means you can swap MCP servers or add new tools without rewriting orchestration code
+* Deep syntax analysis catches sophisticated attempts to bypass SQL security (DELETE/DROP prevention)
+* Defense-in-depth ensures that if one security layer fails, others still protect the database
+* Clear boundaries enable self-service analytics: SQL security prevents damage, governance metadata guides compliant choices
+* Audit trails of all tool calls provide compliance documentation
+
+**Learning outcomes checkpoint:**
+
+By now, you should be able to:
+
+□ Explain the MCP initialization and tool discovery process
+□ Describe how MCP tool schemas are converted to OpenAI API format
+□ Understand why parse tree analysis is more secure than keyword matching
+□ List the security layers that protect the database
+□ Recognize what operations are allowed vs forbidden
+□ Test security boundaries by attempting forbidden operations
+
+**Production considerations:**
+
+For TradeNexus to deploy this in production, they should:
+
+. **Review database permissions**: Ensure the MCP database user has only SELECT privileges
+. **Configure query timeouts**: Set appropriate limits based on workload (default: 30s)
+. **Set result limits**: Prevent resource exhaustion (default: 1000 rows)
+. **Enable audit logging**: Track all queries for compliance reporting
+. **Test failure modes**: Verify that security rejections work as expected
+. **Document boundaries**: Make clear to users what operations are allowed
+
+**What's next:**
+
+You've now completed all hands-on modules covering agentic AI fundamentals, your first queries, advanced analytics with orchestration deep-dive, and MCP protocol with security mechanisms. You understand:
+
+* **Why** agentic AI solves the governance-aware analytics challenge (Module 1)
+* **How to use** the copilot for safe data discovery (Module 2)
+* **How it works** at the orchestration level (Module 3)
+* **How it's secured** through MCP and validation (Module 4)
+
+Congratulations! You're ready to evaluate whether the Data Governance Copilot architecture fits TradeNexus's requirements for self-service analytics with built-in governance controls.

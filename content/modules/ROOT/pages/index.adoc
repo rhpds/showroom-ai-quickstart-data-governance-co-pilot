@@ -6,12 +6,13 @@ Welcome to the AI-Powered Database Analytics with Built-in Governance workshop!
 
 In this workshop, you will:
 
-* Understand the basic definition and building blocks of an agentic AI application, including concepts like the agentic loop, Model Context Protocol (MCP), and how agentic AI differs from other forms of AI
-* Learn the design decisions that must be made when building an agentic AI application
-* Explore the architectural elements that comprise the Data Governance Copilot quickstart
-* Evaluate the choice between custom orchestration and third-party frameworks like Llama Stack
-* Understand the specific use case and functionality the Data Governance Copilot quickstart addresses
-* Discover the benefits of the Data Governance quickstart, including leveraging an enterprise's investment in relational data and achieving data sovereignty using OpenShift AI
+* Understand the 40-year evolution of text-to-SQL and why LLM-based agentic AI succeeds where earlier approaches failed
+* Master the fundamentals of agentic loops, Model Context Protocol (MCP), and governance-aware database analytics
+* Gain hands-on experience running natural language queries, exploring schemas, and observing automatic governance validation
+* Explore advanced analytics with multi-step queries and understand orchestration mechanics at a deep level
+* Learn how MCP tools are discovered, formatted for LLMs, and secured through deep parse tree validation
+* Evaluate architectural choices between custom and framework-based orchestration approaches
+* Discover how this approach leverages existing PostgreSQL investments while achieving data sovereignty on OpenShift AI
 
 == Who this is for
 
@@ -39,6 +40,7 @@ You will work with a pre-deployed Data Governance Copilot environment running on
 You will have access to:
 
 * OpenShift cluster: {openshift_console_url}
+* Copilot UI: link:https://copilot-ui-user{guid}-data-gov.{openshift_cluster_ingress_domain}[https://copilot-ui-user{guid}-data-gov.{openshift_cluster_ingress_domain}^]
 * Username: {user}
 * Password: {password}
 
@@ -46,7 +48,7 @@ NOTE: All environment details and credentials are available in the lab interface
 
 == Estimated time
 
-This workshop will take approximately **45 minutes** to complete.
+This workshop will take approximately **60-75 minutes** to complete.
 
 You can work at your own pace.
 
